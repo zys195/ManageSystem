@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# 数据库
+*.db
+contract_system.db
+
+# 环境/密钥
+.env
+.env.local
+SSH/
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 上传文件（生产用持久化卷）
+uploads/*
+!uploads/.gitkeep
+
+# Node (前端)
+node_modules/
+dist/
+.vite/
+.DS_Store
+
+# 本地截图/临时文件
+Snipaste_*.png
+
+# Docker
+docker-compose.override.yml
+
+# 日志
+*.log
+logs/

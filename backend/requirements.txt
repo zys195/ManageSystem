@@ -1,0 +1,12 @@
+Flask
+Flask-SQLAlchemy
+Flask-Cors
+Flask-JWT-Extended
+Flask-SocketIO
+python-dotenv
+psycopg2-binary
+gunicorn
+eventlet
+openpyxl
+Pillow
+pytesseract

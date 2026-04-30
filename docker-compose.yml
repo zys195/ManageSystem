@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库（生产环境推荐）
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: contract_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_me_in_production}
+      POSTGRES_DB: contract_system
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contract_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 后端 API + WebSocket 服务
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-prod_secret_key_change_this}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-jwt_secret_key_change_this}
+      SQLALCHEMY_DATABASE_URI: postgresql://contract_user:${DB_PASSWORD:-change_me_in_production}@db:5432/contract_system
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FLASK_DEBUG: "false"
+      FLASK_HOST: 0.0.0.0
+      FLASK_PORT: 5000
+      COLLAB_EDIT_LOCK_TIMEOUT: "300"
+      COLLAB_MAX_ONLINE_USERS: "100"
+      GUNICORN_WORKERS: "4"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/uploads:/app/uploads
+
+  # 前端 (Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
