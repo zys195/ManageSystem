@@ -29,12 +29,17 @@ def create_app():
     app.register_blueprint(collab_bp)
 
     with app.app_context():
+        # 自动创建所有缺失的表（安全，不会影响已存在的表）
+        db.create_all()
+
         inspector = inspect(db.engine)
+        # 迁移：contracts 表补充 owner_name 字段
         if inspector.has_table('contracts'):
             columns = {column['name'] for column in inspector.get_columns('contracts')}
             if 'owner_name' not in columns:
                 db.session.execute(text('ALTER TABLE contracts ADD COLUMN owner_name VARCHAR(128)'))
                 db.session.commit()
+        # 迁移：contract_invoices 表补充开票信息字段
         if inspector.has_table('contract_invoices'):
             columns = {column['name'] for column in inspector.get_columns('contract_invoices')}
             invoice_columns = {
@@ -49,8 +54,6 @@ def create_app():
                 if column_name not in columns:
                     db.session.execute(text(f'ALTER TABLE contract_invoices ADD COLUMN {column_name} {column_type}'))
             db.session.commit()
-        if not inspector.has_table('standalone_invoices'):
-            StandaloneInvoice.__table__.create(db.engine)
 
     @app.get('/api/health')
     def health():
