@@ -35,7 +35,7 @@ services:
       FLASK_PORT: 5000
       COLLAB_EDIT_LOCK_TIMEOUT: "300"
       COLLAB_MAX_ONLINE_USERS: "100"
-      GUNICORN_WORKERS: "4"
+      GUNICORN_WORKERS: "2"
     depends_on:
       db:
         condition: service_healthy

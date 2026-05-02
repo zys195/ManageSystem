@@ -166,14 +166,14 @@ cd /opt/contract-system
 cat > .env << 'EOF'
 # ===== 合同管理系统 — 生产环境 =====
 # 安全密钥（务必修改！）
-SECRET_KEY=请替换为随机密钥A
-JWT_SECRET_KEY=请替换为随机密钥B
+SECRET_KEY=50debe1166a8aad8529d9bed7d158d5f1375cdcd31d124e9eda8459d1ea4be82
+JWT_SECRET_KEY=184d8bc8ee86b9b2cb8221aa7c8782083384a8f469cb4090c8403ceaf029c531
 
 # PostgreSQL 内部密码
 DB_PASSWORD=ContractProd2026Secure!
 
 # CORS 允许的来源（改为你的实际 IP 或域名）
-CORS_ORIGINS=http://你的服务器IP,https://你的域名（如有）
+CORS_ORIGINS=http://1.13.174.17
 
 # Flask 运行配置
 FLASK_DEBUG=false

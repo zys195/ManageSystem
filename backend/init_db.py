@@ -74,20 +74,21 @@ with app.app_context():
         role.permissions = [permissions[item] for item in permission_codes]
         role_rows[code] = role
 
-    users = [
-        ('admin', 'Admin123!', '系统管理员', admin_dept, ['admin']),
-        ('finance1', 'Finance123!', '财务测试账号', finance, ['finance']),
-        ('pm1', 'Project123!', '项目经理测试账号', project, ['project_manager']),
-        ('sales1', 'Sales123!', '销售测试账号', sales, ['sales']),
-    ]
-    for username, password, real_name, dept, role_codes in users:
+    # JS001 ~ JS010 业务账号（密码统一 123456）
+    js_depts = [sales, finance, project, sales, admin_dept,
+                project, finance, sales, admin_dept, project]
+    js_role_codes_list = [['admin']] * 10
+    for i in range(1, 11):
+        username = f'JS{i:03d}'
+        real_name = f'业务人员{username}'
         user = User.query.filter_by(username=username).first()
         if not user:
-            user = User(username=username, real_name=real_name, department=dept, status='active')
-            user.set_password(password)
+            user = User(username=username, real_name=real_name,
+                       department=js_depts[i - 1], status='active')
+            user.set_password('123456')
             db.session.add(user)
             db.session.flush()
-        user.roles = [role_rows[item] for item in role_codes]
+        user.roles = [role_rows[item] for item in js_role_codes_list[i - 1]]
 
     company_a = Company.query.filter_by(name='甲方示例科技有限公司').first()
     if not company_a:
@@ -100,9 +101,7 @@ with app.app_context():
     db.session.flush()
 
     if not Contract.query.filter_by(contract_no='HT-2026-0001').first():
-        admin_user = User.query.filter_by(username='admin').first()
-        pm_user = User.query.filter_by(username='pm1').first()
-        sales_user = User.query.filter_by(username='sales1').first()
+        js_admin = User.query.filter_by(username='JS009').first()
         sample_contract = Contract(
             serial_no='20260001',
             contract_no='HT-2026-0001',
@@ -111,15 +110,15 @@ with app.app_context():
             contract_type='software',
             party_a_company_id=company_a.id,
             party_b_company_id=company_b.id,
-            owner_user_id=admin_user.id if admin_user else None,
+            owner_user_id=js_admin.id if js_admin else None,
             department_id=admin_dept.name,
             contract_amount=98000,
             processing_status='executing',
             quotation_status='completed',
             approval_status='approved',
             archive_status='unarchived',
-            created_by=admin_user.id if admin_user else None,
-            updated_by=admin_user.id if admin_user else None,
+            created_by=js_admin.id if js_admin else None,
+            updated_by=js_admin.id if js_admin else None,
         )
         db.session.add(sample_contract)
         db.session.flush()
@@ -128,10 +127,10 @@ with app.app_context():
 
     # ========== 协同项目种子数据 ==========
     from app.models.collaboration import Project, ProjectMember, Task
-    admin_user = User.query.filter_by(username='admin').first()
-    pm_user = User.query.filter_by(username='pm1').first()
-    sales_user = User.query.filter_by(username='sales1').first()
-    
+    js_admin = User.query.filter_by(username='JS009').first()
+    js_pm = User.query.filter_by(username='JS003').first()
+    js_sales = User.query.filter_by(username='JS001').first()
+
     # 示例项目 1: 合同管理平台一期
     project1 = Project.query.filter_by(code='PRJ-2026-001').first()
     if not project1:
@@ -143,16 +142,16 @@ with app.app_context():
             priority='high',
             start_date=datetime(2026, 3, 1),
             end_date=datetime(2026, 7, 31),
-            created_by=admin_user.id if admin_user else None,
+            created_by=js_admin.id if js_admin else None,
         )
         db.session.add(project1)
         db.session.flush()
 
         # 项目成员
         members_data = [
-            (admin_user, 'owner'),
-            (pm_user, 'manager'),
-            (sales_user, 'member'),
+            (js_admin, 'owner'),
+            (js_pm, 'manager'),
+            (js_sales, 'member'),
         ]
         for user, role in members_data:
             if user and not ProjectMember.query.filter_by(project_id=project1.id, user_id=user.id).first():
@@ -161,13 +160,13 @@ with app.app_context():
 
         # 项目任务示例
         tasks_data = [
-            ('需求分析与设计', '完成系统需求调研和详细设计文档', 'done', pm_user),
-            ('数据库设计', '设计完整的数据库表结构和ER图', 'done', pm_user),
-            ('后端API开发', '实现合同CRUD、权限控制等核心接口', 'in_progress', pm_user),
-            ('前端界面开发', '基于Vue3开发响应式前端界面', 'todo', sales_user),
-            ('多人协同模块', '实现实时编辑锁、评论、通知等功能', 'todo', pm_user),
+            ('需求分析与设计', '完成系统需求调研和详细设计文档', 'done', js_pm),
+            ('数据库设计', '设计完整的数据库表结构和ER图', 'done', js_pm),
+            ('后端API开发', '实现合同CRUD、权限控制等核心接口', 'in_progress', js_pm),
+            ('前端界面开发', '基于Vue3开发响应式前端界面', 'todo', js_sales),
+            ('多人协同模块', '实现实时编辑锁、评论、通知等功能', 'todo', js_pm),
             ('系统集成测试', '完成全功能测试和性能优化', 'todo', None),
-            ('用户培训文档', '编写操作手册和培训材料', 'todo', sales_user),
+            ('用户培训文档', '编写操作手册和培训材料', 'todo', js_sales),
         ]
         for title, desc, status, assignee in tasks_data:
             task = Task(
@@ -192,19 +191,16 @@ with app.app_context():
             priority='medium',
             start_date=datetime(2026, 5, 1),
             end_date=datetime(2026, 9, 30),
-            created_by=sales_user.id if sales_user else None,
+            created_by=js_sales.id if js_sales else None,
         )
         db.session.add(project2)
         db.session.flush()
 
-        for user, role in [(sales_user, 'owner'), (pm_user, 'manager')]:
+        for user, role in [(js_sales, 'owner'), (js_pm, 'manager')]:
             if user and not ProjectMember.query.filter_by(project_id=project2.id, user_id=user.id).first():
                 db.session.add(ProjectMember(project_id=project2.id, user_id=user.id, role=role))
 
     db.session.commit()
 
     print('✅ 种子数据初始化完成！')
-    print('管理员账号：admin / Admin123!')
-    print('财务账号：finance1 / Finance123!')
-    print('项目账号：pm1 / Project123!')
-    print('销售账号：sales1 / Sales123!')
+    print('业务账号：JS001 ~ JS010 / 123456')

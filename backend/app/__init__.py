@@ -129,20 +129,21 @@ def create_app():
             role.permissions = [permissions[item] for item in permission_codes]
             role_rows[code] = role
 
-        users = [
-            ('admin', 'Admin123!', '系统管理员', admin_dept, ['admin']),
-            ('finance1', 'Finance123!', '财务测试账号', finance, ['finance']),
-            ('pm1', 'Project123!', '项目经理测试账号', project, ['project_manager']),
-            ('sales1', 'Sales123!', '销售测试账号', sales, ['sales']),
-        ]
-        for username, password, real_name, dept, role_codes in users:
+        # JS001 ~ JS010 业务账号（密码统一 123456）
+        js_depts = [sales, finance, project, sales, admin_dept,
+                    project, finance, sales, admin_dept, project]
+        js_role_codes_list = [['admin']] * 10
+        for i in range(1, 11):
+            username = f'JS{i:03d}'
+            real_name = f'业务人员{username}'
             user = User.query.filter_by(username=username).first()
             if not user:
-                user = User(username=username, real_name=real_name, department=dept, status='active')
-                user.set_password(password)
+                user = User(username=username, real_name=real_name,
+                           department=js_depts[i - 1], status='active')
+                user.set_password('123456')
                 db.session.add(user)
                 db.session.flush()
-            user.roles = [role_rows[item] for item in role_codes]
+            user.roles = [role_rows[item] for item in js_role_codes_list[i - 1]]
 
         company_a = Company.query.filter_by(name='甲方示例科技有限公司').first()
         if not company_a:
@@ -155,7 +156,7 @@ def create_app():
         db.session.flush()
 
         if not Contract.query.filter_by(contract_no='HT-2026-0001').first():
-            admin_user = User.query.filter_by(username='admin').first()
+            js_admin = User.query.filter_by(username='JS009').first()
             sample_contract = Contract(
                 serial_no='20260001',
                 contract_no='HT-2026-0001',
@@ -171,17 +172,14 @@ def create_app():
                 quotation_status='completed',
                 approval_status='approved',
                 archive_status='unarchived',
-                created_by=admin_user.id if admin_user else None,
-                updated_by=admin_user.id if admin_user else None,
+                created_by=js_admin.id if js_admin else None,
+                updated_by=js_admin.id if js_admin else None,
             )
             db.session.add(sample_contract)
 
         db.session.commit()
         print('初始化数据完成。')
-        print('管理员账号：admin / Admin123!')
-        print('财务账号：finance1 / Finance123!')
-        print('项目账号：pm1 / Project123!')
-        print('销售账号：sales1 / Sales123!')
+        print('业务账号：JS001 ~ JS010 / 123456')
 
     # 注册 SocketIO 事件处理器
     from app.socket_events import register_socket_events
