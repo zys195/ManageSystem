@@ -53,10 +53,10 @@ class Contract(db.Model):
     unreceived_amount = db.Column(db.Numeric(18, 2), default=0)
     unpaid_amount = db.Column(db.Numeric(18, 2), default=0)
 
-    processing_status = db.Column(db.String(50), default='draft')
+    processing_status = db.Column(db.String(50), default='executing')
     quotation_status = db.Column(db.String(50), default='not_started')
     settlement_status = db.Column(db.String(50), default='pending')
-    approval_status = db.Column(db.String(50), default='draft')
+    approval_status = db.Column(db.String(50), default='pending_approval')
     archive_status = db.Column(db.String(50), default='unarchived')
     description = db.Column(db.Text)
 

@@ -57,12 +57,10 @@
             @keyup.enter="searchContracts"
           />
           <el-select v-model="query.processing_status" placeholder="处理状态" clearable @change="searchContracts">
-            <el-option label="草稿" value="draft" />
             <el-option label="执行中" value="executing" />
             <el-option label="已完成" value="completed" />
           </el-select>
           <el-select v-model="query.approval_status" placeholder="审批状态" clearable @change="searchContracts">
-            <el-option label="草稿" value="draft" />
             <el-option label="审批中" value="pending_approval" />
             <el-option label="已通过" value="approved" />
             <el-option label="已驳回" value="rejected" />
@@ -437,7 +435,6 @@ function formatCurrency(value) {
 
 function statusText(status) {
   const map = {
-    draft: '草稿',
     executing: '执行中',
     completed: '已完成',
   }
@@ -446,16 +443,14 @@ function statusText(status) {
 
 function statusStyle(status) {
   const map = {
-    draft: { color: '#475467', background: 'rgba(17,24,39,0.06)' },
     executing: { color: '#155eef', background: 'rgba(46,125,255,0.12)' },
     completed: { color: '#067647', background: 'rgba(18,183,106,0.12)' },
   }
-  return map[status] || map.draft
+  return map[status] || { color: '#475467', background: 'rgba(17,24,39,0.06)' }
 }
 
 function approvalText(status) {
   const map = {
-    draft: '草稿',
     pending_approval: '审批中',
     approved: '已通过',
     rejected: '已驳回',
@@ -465,12 +460,11 @@ function approvalText(status) {
 
 function approvalStyle(status) {
   const map = {
-    draft: { color: '#475467', background: 'rgba(17,24,39,0.06)' },
     pending_approval: { color: '#b54708', background: 'rgba(247,144,9,0.14)' },
     approved: { color: '#067647', background: 'rgba(18,183,106,0.12)' },
     rejected: { color: '#b42318', background: 'rgba(240,68,56,0.10)' },
   }
-  return map[status] || map.draft
+  return map[status] || { color: '#475467', background: 'rgba(17,24,39,0.06)' }
 }
 
 function buildQueryParams() {

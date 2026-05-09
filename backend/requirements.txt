@@ -5,8 +5,7 @@ Flask-JWT-Extended
 Flask-SocketIO
 python-dotenv
 psycopg2-binary
-gunicorn
-eventlet
+gunicorn[eventlet]
 openpyxl
 Pillow
 pytesseract

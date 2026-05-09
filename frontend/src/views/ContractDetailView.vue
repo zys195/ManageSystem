@@ -339,7 +339,7 @@ function formatCurrency(value) {
 }
 
 function statusText(status) {
-  const map = { draft: '草稿', executing: '执行中', completed: '已完成' }
+  const map = { executing: '执行中', completed: '已完成' }
   return map[status] || status || '-'
 }
 function settlementText(status) {
@@ -348,11 +348,10 @@ function settlementText(status) {
 }
 function statusStyle(status) {
   const map = {
-    draft: { color: '#475467', background: 'rgba(17,24,39,0.06)' },
     executing: { color: '#155eef', background: 'rgba(46,125,255,0.12)' },
     completed: { color: '#067647', background: 'rgba(18,183,106,0.12)' },
   }
-  return map[status] || map.draft
+  return map[status] || { color: '#475467', background: 'rgba(17,24,39,0.06)' }
 }
 function settlementStyle(status) {
   const map = {
@@ -371,8 +370,8 @@ function goToEdit() {
 const authStore = useAuthStore()
 
 const canSubmitApproval = computed(() => {
-  // 草稿或已驳回状态，且有编辑权限
-  return contract.approval_status && ['draft', 'rejected'].includes(contract.approval_status)
+  // 已驳回状态，且有编辑权限
+  return contract.approval_status === 'rejected'
     && authStore.permissions.includes('contract:update')
 })
 
@@ -394,7 +393,6 @@ const approvalComment = ref('')
 
 function approvalText(status) {
   const map = {
-    draft: '草稿',
     pending_approval: '审批中',
     approved: '已通过',
     rejected: '已驳回',
@@ -404,12 +402,11 @@ function approvalText(status) {
 
 function approvalStyle(status) {
   const map = {
-    draft: { color: '#475467', background: 'rgba(17,24,39,0.06)' },
     pending_approval: { color: '#b54708', background: 'rgba(247,144,9,0.14)' },
     approved: { color: '#067647', background: 'rgba(18,183,106,0.12)' },
     rejected: { color: '#b42318', background: 'rgba(240,68,56,0.10)' },
   }
-  return map[status] || map.draft
+  return map[status] || { color: '#475467', background: 'rgba(17,24,39,0.06)' }
 }
 
 function approvalActionText(action) {

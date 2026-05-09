@@ -153,7 +153,6 @@
               <el-form :model="form" label-position="top">
                 <el-form-item label="处理状态">
                   <el-select v-model="form.processing_status" style="width: 100%">
-                    <el-option label="草稿" value="draft" />
                     <el-option label="执行中" value="executing" />
                     <el-option label="已完成" value="completed" />
                   </el-select>
@@ -167,7 +166,6 @@
                 </el-form-item>
                 <el-form-item label="审批状态">
                   <el-select v-model="form.approval_status" style="width: 100%" disabled>
-                    <el-option label="草稿" value="draft" />
                     <el-option label="审批中" value="pending_approval" />
                     <el-option label="已通过" value="approved" />
                     <el-option label="已驳回" value="rejected" />
@@ -254,9 +252,9 @@ const form = reactive({
   department_id: '',
   contract_amount: 0,
   currency: 'CNY',
-  processing_status: 'draft',
+  processing_status: 'executing',
   settlement_status: 'pending',
-  approval_status: 'draft',
+  approval_status: 'pending_approval',
   archive_status: 'unarchived',
   description: '',
   version: 1,

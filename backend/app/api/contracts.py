@@ -518,7 +518,7 @@ def export_contracts():
     money_alignment = Alignment(horizontal="right", vertical="center")
 
     status_map_cn = {
-        "draft": "草稿", "executing": "执行中", "completed": "已完成",
+        "executing": "执行中", "completed": "已完成",
         "pending": "未结清", "partially_settled": "部分结清", "settled": "已结清",
         "not_started": "未开始", "in_progress": "进行中", "done": "已完成",
         "pending_approval": "审批中", "approved": "已通过",
@@ -615,9 +615,9 @@ def create_contract():
         department_id=data.get('department_id') or None,
         currency=data.get('currency') or 'CNY',
         contract_amount=parse_decimal(data.get('contract_amount'), '合同金额'),
-        processing_status=data.get('processing_status') or 'draft',
+        processing_status=data.get('processing_status') or 'executing',
         quotation_status=data.get('quotation_status') or 'not_started',
-        approval_status=data.get('approval_status') or 'draft',
+        approval_status=data.get('approval_status') or 'pending_approval',
         archive_status=data.get('archive_status') or 'unarchived',
         description=data.get('description') or None,
         created_by=user.id,
@@ -1439,12 +1439,12 @@ def _add_approval_history(contract_id, action, operator_id, operator_name,
 @contract_bp.post('/contracts/<int:contract_id>/approval/submit')
 @require_permissions('contract:update')
 def submit_approval(contract_id):
-    """提交审批：草稿/已驳回 → 审批中"""
+    """提交审批：已驳回 → 审批中"""
     contract, error = get_contract_or_404(contract_id)
     if error:
         return error
 
-    if contract.approval_status not in ('draft', 'rejected'):
+    if contract.approval_status != 'rejected':
         return jsonify({'message': f'当前审批状态为「{contract.approval_status}」，无法提交审批'}), 400
 
     user = get_current_user()

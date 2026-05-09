@@ -14,7 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 安装 Python 依赖
 COPY requirements.txt .
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-RUN pip install --no-cache-dir --timeout 120 -i ${PIP_INDEX_URL} -r requirements.txt
+ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=10 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 # 复制应用代码
 COPY . .
@@ -33,7 +37,7 @@ ENV FLASK_ENV=production \
 EXPOSE 5000
 
 # 使用 gunicorn + eventlet 运行（支持 WebSocket）
-CMD ["gunicorn", "--worker-class", "eventlet", "-w", "4", "--threads", "50", \
+CMD ["gunicorn", "--worker-class", "gunicorn.workers.geventlet.EventletWorker", "-w", "4", "--threads", "50", \
      "--bind", "0.0.0.0:5000", "--timeout", "120", \
      "--access-logfile", "-", "--error-logfile", "-", \
      "run:app"]

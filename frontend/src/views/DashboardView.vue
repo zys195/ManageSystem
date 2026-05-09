@@ -137,16 +137,15 @@ function formatCurrency(value) {
   }).format(Number(value || 0))
 }
 function statusText(status) {
-  const map = { draft: '草稿', executing: '执行中', completed: '已完成' }
+  const map = { executing: '执行中', completed: '已完成' }
   return map[status] || status || '-'
 }
 function statusStyle(status) {
   const map = {
-    draft: { color: '#475467', background: 'rgba(17,24,39,0.06)' },
     executing: { color: '#155eef', background: 'rgba(46, 125, 255, 0.12)' },
     completed: { color: '#067647', background: 'rgba(18, 183, 106, 0.12)' },
   }
-  return map[status] || map.draft
+  return map[status] || { color: '#475467', background: 'rgba(17,24,39,0.06)' }
 }
 async function loadData() {
   try {
