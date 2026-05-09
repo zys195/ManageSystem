@@ -42,7 +42,7 @@ services:
     volumes:
       - ./backend/uploads:/app/uploads
 
-  # 前端 (Nginx)
+  # 前端（Nginx）
   frontend:
     build:
       context: ./frontend
