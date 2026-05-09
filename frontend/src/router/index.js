@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+﻿import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 import LoginView from '../views/LoginView.vue'
@@ -7,6 +7,7 @@ import ContractListView from '../views/ContractListView.vue'
 import ContractFormView from '../views/ContractFormView.vue'
 import ContractDetailView from '../views/ContractDetailView.vue'
 import InvoiceListView from '../views/InvoiceListView.vue'
+import SystemBackupView from '../views/SystemBackupView.vue'
 
 const routes = [
   { path: '/login', component: LoginView, meta: { title: '登录' } },
@@ -17,6 +18,7 @@ const routes = [
   { path: '/contracts/:id/edit', component: ContractFormView, meta: { requiresAuth: true, title: '编辑合同' } },
   { path: '/contracts/:id', component: ContractDetailView, meta: { requiresAuth: true, title: '合同详情' } },
   { path: '/invoices', component: InvoiceListView, meta: { requiresAuth: true, title: '发票列表' } },
+  { path: '/backup', component: SystemBackupView, meta: { requiresAuth: true, title: '数据备份' } },
 ]
 
 const router = createRouter({
@@ -43,7 +45,7 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach((to) => {
-  document.title = `${to.meta?.title || '合同管理系统'} · 合同管理系统`
+  document.title = `${to.meta?.title || '合同管理系统'} - 合同管理系统`
 })
 
 export default router

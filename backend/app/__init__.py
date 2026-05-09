@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 from flask import Flask, jsonify
 from sqlalchemy import inspect, text
 
@@ -9,6 +9,7 @@ from app.api.auth import auth_bp
 from app.api.metadata import meta_bp
 from app.api.contracts import contract_bp
 from app.api.collaboration import collab_bp
+from app.api.backup import backup_bp
 
 
 
@@ -27,19 +28,20 @@ def create_app():
     app.register_blueprint(meta_bp)
     app.register_blueprint(contract_bp)
     app.register_blueprint(collab_bp)
+    app.register_blueprint(backup_bp)
 
     with app.app_context():
-        # 自动创建所有缺失的表（安全，不会影响已存在的表）
+        # 自动创建所有缺失的表，不影响已有表。
         db.create_all()
 
         inspector = inspect(db.engine)
-        # 迁移：contracts 表补充 owner_name 字段
+        # 迁移：contracts 表补充 owner_name 字段。
         if inspector.has_table('contracts'):
             columns = {column['name'] for column in inspector.get_columns('contracts')}
             if 'owner_name' not in columns:
                 db.session.execute(text('ALTER TABLE contracts ADD COLUMN owner_name VARCHAR(128)'))
                 db.session.commit()
-        # 迁移：contract_invoices 表补充开票信息字段
+        # 迁移：contract_invoices 表补充开票信息字段。
         if inspector.has_table('contract_invoices'):
             columns = {column['name'] for column in inspector.get_columns('contract_invoices')}
             invoice_columns = {
@@ -53,6 +55,16 @@ def create_app():
             for column_name, column_type in invoice_columns.items():
                 if column_name not in columns:
                     db.session.execute(text(f'ALTER TABLE contract_invoices ADD COLUMN {column_name} {column_type}'))
+            db.session.commit()
+
+        backup_permission = Permission.query.filter_by(code='backup:manage').first()
+        if not backup_permission:
+            backup_permission = Permission(code='backup:manage', name='Backup and restore', module='system')
+            db.session.add(backup_permission)
+            db.session.flush()
+        admin_role = Role.query.filter_by(code='admin').first()
+        if admin_role and backup_permission not in admin_role.permissions:
+            admin_role.permissions.append(backup_permission)
             db.session.commit()
 
     @app.get('/api/health')
@@ -70,12 +82,12 @@ def create_app():
         if isinstance(err, HTTPException):
             return err
         db.session.rollback()
-        return jsonify({'message': '服务器内部错误', 'detail': str(err)}), 500
+        return jsonify({'message': 'server error', 'detail': str(err)}), 500
 
     @app.cli.command('init-db')
     def init_db_command():
         db.create_all()
-        print('数据库表已创建。')
+        print('database tables created')
 
     @app.cli.command('seed')
     def seed_command():
@@ -104,6 +116,7 @@ def create_app():
             'audit:view': ('查看审计日志', 'audit'),
             'company:create': ('新增单位', 'company'),
             'approval:approve': ('审批合同', 'approval'),
+            'backup:manage': ('数据备份与恢复', 'system'),
         }
 
         permissions = {}
@@ -133,7 +146,7 @@ def create_app():
             role.permissions = [permissions[item] for item in permission_codes]
             role_rows[code] = role
 
-        # JS001 ~ JS010 业务账号（密码统一 123456）
+        # JS001 ~ JS010 test accounts
         js_depts = [sales, finance, project, sales, admin_dept,
                     project, finance, sales, admin_dept, project]
         js_role_codes_list = [['admin']] * 10
@@ -151,11 +164,11 @@ def create_app():
 
         company_a = Company.query.filter_by(name='甲方示例科技有限公司').first()
         if not company_a:
-            company_a = Company(name='甲方示例科技有限公司', contact_person='张总', contact_phone='13800000001')
+            company_a = Company(name='Demo Party A', contact_person='Demo contact A', contact_phone='13800000001')
             db.session.add(company_a)
         company_b = Company.query.filter_by(name='乙方示例服务有限公司').first()
         if not company_b:
-            company_b = Company(name='乙方示例服务有限公司', contact_person='李经理', contact_phone='13800000002')
+            company_b = Company(name='Demo Party B', contact_person='Demo contact B', contact_phone='13800000002')
             db.session.add(company_b)
         db.session.flush()
 
@@ -165,7 +178,7 @@ def create_app():
                 serial_no='20260001',
                 contract_no='HT-2026-0001',
                 contract_name='合同管理系统实施合同',
-                project_name='合同管理平台一期',
+                project_name='Contract management platform phase 1',
                 contract_type='software',
                 party_a_company_id=company_a.id,
                 party_b_company_id=company_b.id,
@@ -182,10 +195,10 @@ def create_app():
             db.session.add(sample_contract)
 
         db.session.commit()
-        print('初始化数据完成。')
+        print('seed data initialized')
         print('业务账号：JS001 ~ JS010 / 123456')
 
-    # 注册 SocketIO 事件处理器
+    # Register SocketIO event handlers.
     from app.socket_events import register_socket_events
     register_socket_events(socketio)
 

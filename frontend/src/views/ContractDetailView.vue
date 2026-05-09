@@ -704,6 +704,32 @@ onUnmounted(async () => {
 .slide-down-enter-from { opacity: 0; transform: translateY(-16px); }
 .slide-down-leave-to { opacity: 0; transform: translateY(-8px); }
 
+.side-stack .el-card:first-child :deep(.el-upload .el-button),
+.side-stack .el-card:first-child :deep(.el-form > .el-button--primary) {
+  width: 129px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: none !important;
+  border-radius: 16px !important;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.side-stack .el-card:first-child :deep(.el-upload .el-button) {
+  color: #fff !important;
+  background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%) !important;
+  box-shadow: 0 14px 30px rgba(22, 163, 74, 0.24);
+}
+
+.side-stack :deep(.el-upload .el-button:hover),
+.side-stack :deep(.el-upload .el-button:focus) {
+  color: #fff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 18px 34px rgba(22, 163, 74, 0.3);
+}
+
 @media (max-width: 900px) {
   .detail-hero, .hero-actions { flex-direction: column; align-items: flex-start; }
   .compact-grid, .overview-grid { grid-template-columns: 1fr; }

@@ -1,14 +1,10 @@
-"""
-协作编辑锁 REST API
-- 获取/释放/查询编辑锁
-- 查询合同在线用户
-- 支持HTTP方式的锁管理（作为WebSocket的补充）
-"""
+"""协作编辑锁 REST API。"""
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
-from app.extensions import db
-from app.utils.permissions import get_current_user
+
 from app.models.collaboration import ContractEditLock
+from app.utils.permissions import get_current_user
 
 collab_bp = Blueprint('collaboration', __name__, url_prefix='/api')
 
@@ -16,7 +12,7 @@ collab_bp = Blueprint('collaboration', __name__, url_prefix='/api')
 @collab_bp.post('/contracts/<int:contract_id>/lock')
 @jwt_required()
 def acquire_edit_lock(contract_id):
-    """获取合同编辑锁（HTTP方式）"""
+    """获取合同编辑锁。"""
     user = get_current_user()
     data = request.get_json() or {}
     session_id = data.get('session_id', f'http_{user.id}')
@@ -35,7 +31,7 @@ def acquire_edit_lock(contract_id):
 @collab_bp.delete('/contracts/<int:contract_id>/lock')
 @jwt_required()
 def release_edit_lock(contract_id):
-    """释放合同编辑锁（HTTP方式）"""
+    """释放合同编辑锁。"""
     user = get_current_user()
     data = request.get_json() or {}
     session_id = data.get('session_id', f'http_{user.id}')
@@ -50,7 +46,7 @@ def release_edit_lock(contract_id):
 @collab_bp.get('/contracts/<int:contract_id>/lock')
 @jwt_required()
 def get_lock_status(contract_id):
-    """获取合同当前锁状态"""
+    """获取合同当前锁状态。"""
     lock_info = ContractEditLock.get_lock_info(contract_id)
     return jsonify({
         'lock': lock_info,
@@ -61,7 +57,7 @@ def get_lock_status(contract_id):
 @collab_bp.post('/contracts/<int:contract_id>/lock/heartbeat')
 @jwt_required()
 def heartbeat_lock(contract_id):
-    """心跳续期编辑锁"""
+    """续期合同编辑锁。"""
     user = get_current_user()
     data = request.get_json() or {}
     session_id = data.get('session_id', f'http_{user.id}')
@@ -78,6 +74,6 @@ def heartbeat_lock(contract_id):
 @collab_bp.get('/contracts/<int:contract_id>/online-users')
 @jwt_required()
 def get_online_users(contract_id):
-    """获取合同的在线用户信息"""
+    """获取查看同一合同的在线用户信息。"""
     info = ContractEditLock.get_contract_online_users(contract_id)
     return jsonify(info)

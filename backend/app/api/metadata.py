@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
+
 from app.models.user import User, Role, Department
 from app.models.contract import Company
 from app.utils.permissions import require_permissions
@@ -39,6 +40,8 @@ def list_companies():
 @require_permissions('company:create')
 def create_company():
     from flask import request
+    from app.extensions import db
+
     data = request.get_json() or {}
     company = Company(
         name=(data.get('name') or '').strip(),
@@ -51,7 +54,7 @@ def create_company():
         return jsonify({'message': '单位名称不能为空'}), 400
     if Company.query.filter_by(name=company.name).first():
         return jsonify({'message': '单位已存在'}), 400
-    from app.extensions import db
+
     db.session.add(company)
     db.session.commit()
     return jsonify(company.to_dict()), 201

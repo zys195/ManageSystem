@@ -44,6 +44,7 @@ dist/
 # 本地截图/临时文件
 Snipaste_*.png
 contract_import_test_data.xlsx
+system_backup_*.zip
 
 # Docker
 docker-compose.override.yml

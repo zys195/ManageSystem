@@ -646,7 +646,7 @@ onMounted(loadData)
   }
 }
 
-/* ===== 瀵煎叆瀵硅瘽妗嗘牱寮?===== */
+/* ===== 导入对话框样式 ===== */
 .import-body {
   padding: 0;
 }
@@ -762,7 +762,7 @@ onMounted(loadData)
 </style>
 
 <style>
-/* ===== 瀵煎叆鍚堝悓 - 浜氬厠鍔涙ā绯婇鏍?===== */
+/* ===== 导入合同 - 亚克力模糊风格 ===== */
 .import-dialog-overlay.el-overlay {
   background-color: rgba(0, 0, 0, 0.35) !important;
 }

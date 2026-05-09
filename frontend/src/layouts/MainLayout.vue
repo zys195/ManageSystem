@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="layout-root">
     <aside class="layout-aside">
       <div class="brand-block">
@@ -96,6 +96,7 @@ const menus = [
   { label: '合同列表', path: '/contracts' },
   { label: '发票列表', path: '/invoices' },
   { label: '新建合同', path: '/contracts/create' },
+  { label: '数据备份', path: '/backup' },
 ]
 
 const currentTitle = computed(() => route.meta?.title || '合同管理系统')
@@ -104,6 +105,7 @@ const activeMenu = computed(() => {
     return route.path === '/contracts/create' ? '/contracts/create' : '/contracts'
   }
   if (route.path.startsWith('/invoices')) return '/invoices'
+  if (route.path.startsWith('/backup')) return '/backup'
   return route.path
 })
 const todayLabel = computed(() => {
