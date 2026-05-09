@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 安装 Python 依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+RUN pip install --no-cache-dir --timeout 120 -i ${PIP_INDEX_URL} -r requirements.txt
 
 # 复制应用代码
 COPY . .
