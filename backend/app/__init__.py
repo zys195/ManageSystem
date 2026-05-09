@@ -103,6 +103,7 @@ def create_app():
             'file:delete': ('删除文件', 'file'),
             'audit:view': ('查看审计日志', 'audit'),
             'company:create': ('新增单位', 'company'),
+            'approval:approve': ('审批合同', 'approval'),
         }
 
         permissions = {}

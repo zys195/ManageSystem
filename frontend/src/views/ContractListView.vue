@@ -40,11 +40,11 @@
           <div class="filter-head">
             <div>
               <div class="surface-title">筛选条件</div>
-              <p class="surface-subtitle">支持关键词与处理状态过滤。</p>
+              <p class="surface-subtitle">支持关键词、处理状态与审批状态过滤。</p>
             </div>
             <div class="filter-actions">
               <el-button @click="resetQuery">重置</el-button>
-              <el-button type="primary" @click="loadData">查询</el-button>
+              <el-button type="primary" @click="searchContracts">查询</el-button>
             </div>
           </div>
         </template>
@@ -54,12 +54,18 @@
             v-model="query.keyword"
             placeholder="搜索合同号 / 项目名称 / 合同名称"
             clearable
-            @keyup.enter="loadData"
+            @keyup.enter="searchContracts"
           />
-          <el-select v-model="query.processing_status" placeholder="处理状态" clearable>
+          <el-select v-model="query.processing_status" placeholder="处理状态" clearable @change="searchContracts">
             <el-option label="草稿" value="draft" />
             <el-option label="执行中" value="executing" />
             <el-option label="已完成" value="completed" />
+          </el-select>
+          <el-select v-model="query.approval_status" placeholder="审批状态" clearable @change="searchContracts">
+            <el-option label="草稿" value="draft" />
+            <el-option label="审批中" value="pending_approval" />
+            <el-option label="已通过" value="approved" />
+            <el-option label="已驳回" value="rejected" />
           </el-select>
         </div>
       </el-card>
@@ -111,6 +117,13 @@
             <template #default="scope">
               <span class="status-pill" :style="statusStyle(scope.row.processing_status)">
                 {{ statusText(scope.row.processing_status) }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="审批状态" width="130">
+            <template #default="scope">
+              <span class="status-pill" :style="approvalStyle(scope.row.approval_status)">
+                {{ approvalText(scope.row.approval_status) }}
               </span>
             </template>
           </el-table-column>
@@ -257,6 +270,7 @@ const loading = ref(false)
 const query = reactive({
   keyword: '',
   processing_status: '',
+  approval_status: '',
   page: 1,
   page_size: 10,
 })
@@ -323,7 +337,13 @@ async function handleImport() {
     await ElMessageBox.confirm(
       `确定要导入文件「${importFile.value.name}」吗？导入后将自动创建合同记录。`,
       '确认导入',
-      { type: 'info', confirmButtonText: '开始导入', cancelButtonText: '取消' }
+      {
+        type: 'info',
+        customClass: 'solid-confirm-box',
+        modalClass: 'blur-confirm-overlay',
+        confirmButtonText: '开始导入',
+        cancelButtonText: '取消',
+      }
     )
   } catch {
     return // 用户取消
@@ -358,8 +378,7 @@ async function openExportDialog() {
   exportCandidatesLoading.value = true
   try {
     const { data } = await getContracts({
-      keyword: query.keyword,
-      processing_status: query.processing_status,
+      ...buildQueryParams(),
       page: 1,
       page_size: 100,
     })
@@ -384,8 +403,7 @@ async function handleExport() {
   exporting.value = true
   try {
     const { data } = await exportContracts({
-      keyword: query.keyword,
-      processing_status: query.processing_status,
+      ...buildQueryParams(),
       ids: selectedExportContracts.value.map((item) => item.id).join(','),
     })
     const url = window.URL.createObjectURL(new Blob([data]))
@@ -435,10 +453,47 @@ function statusStyle(status) {
   return map[status] || map.draft
 }
 
+function approvalText(status) {
+  const map = {
+    draft: '草稿',
+    pending_approval: '审批中',
+    approved: '已通过',
+    rejected: '已驳回',
+  }
+  return map[status] || status || '-'
+}
+
+function approvalStyle(status) {
+  const map = {
+    draft: { color: '#475467', background: 'rgba(17,24,39,0.06)' },
+    pending_approval: { color: '#b54708', background: 'rgba(247,144,9,0.14)' },
+    approved: { color: '#067647', background: 'rgba(18,183,106,0.12)' },
+    rejected: { color: '#b42318', background: 'rgba(240,68,56,0.10)' },
+  }
+  return map[status] || map.draft
+}
+
+function buildQueryParams() {
+  return {
+    keyword: query.keyword || undefined,
+    processing_status: query.processing_status || undefined,
+    approval_status: query.approval_status || undefined,
+  }
+}
+
+function searchContracts() {
+  query.page = 1
+  loadData()
+}
+
 async function loadData() {
   loading.value = true
   try {
-    const { data } = await getContracts(query)
+    const { data } = await getContracts({
+      ...buildQueryParams(),
+      page: query.page,
+      page_size: query.page_size,
+    })
     items.value = data.items
     total.value = data.total
   } catch (error) {
@@ -451,6 +506,7 @@ async function loadData() {
 function resetQuery() {
   query.keyword = ''
   query.processing_status = ''
+  query.approval_status = ''
   query.page = 1
   loadData()
 }
@@ -499,7 +555,7 @@ onMounted(loadData)
 
 .filter-grid {
   display: grid;
-  grid-template-columns: 1.8fr 0.8fr;
+  grid-template-columns: 1.8fr 0.8fr 0.8fr;
   gap: 16px;
 }
 
@@ -774,6 +830,12 @@ onMounted(loadData)
   box-shadow: 0 28px 80px rgba(15, 23, 42, 0.26) !important;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+}
+
+.blur-confirm-overlay.el-overlay {
+  background-color: rgba(15, 23, 42, 0.26) !important;
+  backdrop-filter: blur(10px) saturate(1.08);
+  -webkit-backdrop-filter: blur(10px) saturate(1.08);
 }
 
 .solid-confirm-box .el-message-box__header {

@@ -165,6 +165,23 @@
                     <el-option label="全部结清" value="settled" />
                   </el-select>
                 </el-form-item>
+                <el-form-item label="审批状态">
+                  <el-select v-model="form.approval_status" style="width: 100%" disabled>
+                    <el-option label="草稿" value="draft" />
+                    <el-option label="审批中" value="pending_approval" />
+                    <el-option label="已通过" value="approved" />
+                    <el-option label="已驳回" value="rejected" />
+                  </el-select>
+                  <p class="field-tip" v-if="isEdit && form.approval_status === 'rejected'">
+                    审批已驳回，修改后可重新提交审批
+                  </p>
+                  <p class="field-tip" v-else-if="isEdit && form.approval_status === 'pending_approval'">
+                    审批中，暂不可修改
+                  </p>
+                  <p class="field-tip" v-else-if="isEdit && form.approval_status === 'approved'">
+                    审批已通过
+                  </p>
+                </el-form-item>
               </el-form>
             </el-card>
 
@@ -239,6 +256,7 @@ const form = reactive({
   currency: 'CNY',
   processing_status: 'draft',
   settlement_status: 'pending',
+  approval_status: 'draft',
   archive_status: 'unarchived',
   description: '',
   version: 1,
@@ -456,6 +474,7 @@ onUnmounted(() => {
 .divider { margin: 6px 0 18px; height: 1px; background: rgba(15, 23, 42, 0.06); }
 .small-title { margin-bottom: 14px; font-size: 16px; }
 .field-error { margin-top: 6px; color: #f56c6c; font-size: 12px; line-height: 1.2; }
+.field-tip { margin-top: 6px; color: #667085; font-size: 12px; line-height: 1.4; }
 
 @media (max-width: 900px) {
   .form-section { grid-template-columns: 1fr; }

@@ -32,6 +32,8 @@ SSH/
 # 上传文件（生产用持久化卷）
 uploads/*
 !uploads/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
 
 # Node (前端)
 node_modules/
@@ -41,6 +43,7 @@ dist/
 
 # 本地截图/临时文件
 Snipaste_*.png
+contract_import_test_data.xlsx
 
 # Docker
 docker-compose.override.yml

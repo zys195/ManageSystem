@@ -15,6 +15,7 @@
           <div class="hero-tags">
             <span class="status-pill" :style="statusStyle(contract.processing_status)">{{ statusText(contract.processing_status) }}</span>
             <span class="status-pill" :style="settlementStyle(contract.settlement_status)">{{ settlementText(contract.settlement_status) }}</span>
+            <span class="status-pill" :style="approvalStyle(contract.approval_status)">{{ approvalText(contract.approval_status) }}</span>
             <!-- 在线协作指示器 -->
             <span v-if="collab.isConnected && collab.currentContractId == route.params.id" class="online-badge">
               <span class="online-dot"></span>
@@ -35,6 +36,17 @@
             >
               <el-button type="primary" disabled>编辑中 ({{ lockCountdown }}s)</el-button>
             </el-tooltip>
+          </template>
+          <!-- 审批操作按钮 -->
+          <template v-if="canSubmitApproval">
+            <el-button type="success" @click="openApprovalDialog('submit')">提交审批</el-button>
+          </template>
+          <template v-if="canApprove">
+            <el-button type="success" @click="openApprovalDialog('approve')">通过</el-button>
+            <el-button type="danger" @click="openApprovalDialog('reject')">驳回</el-button>
+          </template>
+          <template v-if="canResubmit">
+            <el-button type="warning" @click="openApprovalDialog('resubmit')">重新提交</el-button>
           </template>
         </div>
 
@@ -129,9 +141,19 @@
                   <el-option label="其他" value="other" />
                 </el-select>
               </el-form-item>
-              <el-upload :auto-upload="false" :show-file-list="true" :on-change="onFileChange" :limit="1">
+              <el-upload
+                v-model:file-list="uploadFileList"
+                :auto-upload="false"
+                :show-file-list="true"
+                :on-change="onFileChange"
+                :before-upload="beforeUpload"
+                :limit="1"
+              >
                 <template #trigger>
                   <el-button>选择文件</el-button>
+                </template>
+                <template #tip>
+                  <div class="el-upload__tip">文件大小不超过 5MB</div>
                 </template>
               </el-upload>
               <el-button type="primary" style="margin-top: 12px" @click="submitFile">上传附件</el-button>
@@ -216,10 +238,60 @@
               </el-table-column>
             </el-table>
           </el-tab-pane>
+          <el-tab-pane label="审批历史">
+            <el-timeline>
+              <el-timeline-item
+                v-for="item in contract.approval_history || []"
+                :key="item.id"
+                :type="approvalTimelineType(item.action)"
+                :timestamp="formatTime(item.created_at)"
+                placement="top"
+              >
+                <div class="approval-timeline-item">
+                  <strong>{{ item.operator_name }}</strong>
+                  <span class="approval-action">{{ approvalActionText(item.action) }}</span>
+                  <span v-if="item.comment" class="approval-comment">「{{ item.comment }}」</span>
+                </div>
+              </el-timeline-item>
+              <el-timeline-item v-if="!contract.approval_history || !contract.approval_history.length" type="info" timestamp="">
+                <div class="approval-timeline-item">暂无审批记录</div>
+              </el-timeline-item>
+            </el-timeline>
+          </el-tab-pane>
         </el-tabs>
       </el-card>
     </div>
   </MainLayout>
+
+  <!-- 审批操作对话框 -->
+  <el-dialog
+    v-model="approvalDialogVisible"
+    :title="approvalDialogType === 'submit' ? '提交审批' : approvalDialogType === 'approve' ? '审批通过' : approvalDialogType === 'reject' ? '审批驳回' : '重新提交审批'"
+    width="480px"
+    :close-on-click-modal="false"
+  >
+    <el-form label-position="top">
+      <el-form-item :label="approvalDialogType === 'reject' ? '审批意见（必填）' : '审批意见（可选）'">
+        <el-input
+          v-model="approvalComment"
+          type="textarea"
+          :rows="4"
+          :placeholder="approvalDialogType === 'reject' ? '请填写驳回原因' : '请输入审批意见'"
+        />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <div class="dialog-footer">
+        <el-button @click="approvalDialogVisible = false">取消</el-button>
+        <el-button
+          :type="approvalDialogType === 'reject' ? 'danger' : 'primary'"
+          @click="confirmApprovalAction"
+        >
+          {{ approvalDialogType === 'submit' ? '确认提交' : approvalDialogType === 'approve' ? '确认通过' : approvalDialogType === 'reject' ? '确认驳回' : '确认重新提交' }}
+        </el-button>
+      </div>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -227,7 +299,7 @@ import { onMounted, onUnmounted, reactive, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import MainLayout from '../layouts/MainLayout.vue'
-import { addAcceptance, addPayment, addReceipt, downloadContractFile, getContract, uploadFile } from '../api/contract'
+import { addAcceptance, addPayment, addReceipt, downloadContractFile, getContract, uploadFile, submitApproval, approveContract, rejectContract, resubmitApproval } from '../api/contract'
 import { useCollaborationStore } from '../stores/collaboration'
 import { useAuthStore } from '../stores/auth'
 
@@ -236,6 +308,7 @@ const router = useRouter()
 const loading = ref(false)
 const contract = reactive({})
 const selectedFile = ref(null)
+const uploadFileList = ref([])
 const fileCategory = ref('contract_main')
 
 const receiptForm = reactive({ receipt_amount: 0, receipt_date: '', receipt_method: '' })
@@ -292,6 +365,110 @@ function settlementStyle(status) {
 
 function goToEdit() {
   router.push(`/contracts/${route.params.id}/edit`)
+}
+
+// ========== 审批相关 ==========
+const authStore = useAuthStore()
+
+const canSubmitApproval = computed(() => {
+  // 草稿或已驳回状态，且有编辑权限
+  return contract.approval_status && ['draft', 'rejected'].includes(contract.approval_status)
+    && authStore.permissions.includes('contract:update')
+})
+
+const canApprove = computed(() => {
+  // 审批中状态，且有审批权限
+  return contract.approval_status === 'pending_approval'
+    && authStore.permissions.includes('approval:approve')
+})
+
+const canResubmit = computed(() => {
+  // 已驳回状态，且有编辑权限
+  return contract.approval_status === 'rejected'
+    && authStore.permissions.includes('contract:update')
+})
+
+const approvalDialogVisible = ref(false)
+const approvalDialogType = ref('submit')
+const approvalComment = ref('')
+
+function approvalText(status) {
+  const map = {
+    draft: '草稿',
+    pending_approval: '审批中',
+    approved: '已通过',
+    rejected: '已驳回',
+  }
+  return map[status] || status || '-'
+}
+
+function approvalStyle(status) {
+  const map = {
+    draft: { color: '#475467', background: 'rgba(17,24,39,0.06)' },
+    pending_approval: { color: '#b54708', background: 'rgba(247,144,9,0.14)' },
+    approved: { color: '#067647', background: 'rgba(18,183,106,0.12)' },
+    rejected: { color: '#b42318', background: 'rgba(240,68,56,0.10)' },
+  }
+  return map[status] || map.draft
+}
+
+function approvalActionText(action) {
+  const map = {
+    submit: '提交审批',
+    approve: '审批通过',
+    reject: '审批驳回',
+    resubmit: '重新提交',
+  }
+  return map[action] || action
+}
+
+function approvalTimelineType(action) {
+  const map = {
+    submit: 'primary',
+    approve: 'success',
+    reject: 'danger',
+    resubmit: 'warning',
+  }
+  return map[action] || 'info'
+}
+
+function formatTime(val) {
+  if (!val) return ''
+  return new Date(val).toLocaleString('zh-CN')
+}
+
+function openApprovalDialog(type) {
+  approvalDialogType.value = type
+  approvalComment.value = ''
+  approvalDialogVisible.value = true
+}
+
+async function confirmApprovalAction() {
+  const action = approvalDialogType.value
+  const comment = approvalComment.value.trim()
+  try {
+    if (action === 'submit') {
+      await submitApproval(route.params.id, { comment })
+      ElMessage.success('已提交审批')
+    } else if (action === 'approve') {
+      await approveContract(route.params.id, { comment })
+      ElMessage.success('审批通过')
+    } else if (action === 'reject') {
+      if (!comment) {
+        ElMessage.warning('驳回时必须填写审批意见')
+        return
+      }
+      await rejectContract(route.params.id, { comment })
+      ElMessage.success('已驳回')
+    } else if (action === 'resubmit') {
+      await resubmitApproval(route.params.id, { comment })
+      ElMessage.success('已重新提交审批')
+    }
+    approvalDialogVisible.value = false
+    loadData()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '操作失败')
+  }
 }
 
 async function loadData() {
@@ -362,7 +539,33 @@ async function submitAcceptance() {
   } catch (error) { ElMessage.error(error.response?.data?.message || '新增验收失败') }
 }
 
-function onFileChange(file) { selectedFile.value = file.raw }
+const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+
+function beforeUpload(rawFile) {
+  if (rawFile.size > MAX_FILE_SIZE) {
+    const sizeMB = (rawFile.size / (1024 * 1024)).toFixed(2)
+    ElMessage.warning(`文件大小为 ${sizeMB}MB，超过 5MB 限制，请选择较小的文件`)
+    return false
+  }
+  return true
+}
+
+function onFileChange(file) {
+  const rawFile = file.raw
+  if (!rawFile) {
+    selectedFile.value = null
+    uploadFileList.value = []
+    return
+  }
+
+  if (!beforeUpload(rawFile)) {
+    selectedFile.value = null
+    uploadFileList.value = []
+    return
+  }
+
+  selectedFile.value = rawFile
+}
 
 async function handleDownload(fileRow) {
   try {
@@ -388,6 +591,7 @@ async function submitFile() {
     formData.append('file_category', fileCategory.value)
     await uploadFile(route.params.id, formData)
     selectedFile.value = null
+    uploadFileList.value = []
     ElMessage.success('上传成功')
     loadData()
   } catch (error) { ElMessage.error(error.response?.data?.message || '上传失败') }
@@ -505,4 +709,10 @@ onUnmounted(async () => {
   .compact-grid, .overview-grid { grid-template-columns: 1fr; }
   .online-avatars { position: static; margin-top: 12px; }
 }
+
+/* 审批时间线 */
+.approval-timeline-item { line-height: 1.8; }
+.approval-timeline-item strong { margin-right: 8px; }
+.approval-action { color: #667085; font-size: 13px; margin-right: 8px; }
+.approval-comment { color: #155eef; font-size: 13px; }
 </style>

@@ -85,3 +85,25 @@ export function deleteInvoice(id) {
 export function exportInvoices(params) {
   return http.get('/invoices/export', { params, responseType: 'blob' })
 }
+
+// ========== 审批流程 API ==========
+
+export function submitApproval(contractId, data) {
+  return http.post(`/contracts/${contractId}/approval/submit`, data)
+}
+
+export function approveContract(contractId, data) {
+  return http.post(`/contracts/${contractId}/approval/approve`, data)
+}
+
+export function rejectContract(contractId, data) {
+  return http.post(`/contracts/${contractId}/approval/reject`, data)
+}
+
+export function resubmitApproval(contractId, data) {
+  return http.post(`/contracts/${contractId}/approval/resubmit`, data)
+}
+
+export function getApprovalHistory(contractId) {
+  return http.get(`/contracts/${contractId}/approval/history`)
+}

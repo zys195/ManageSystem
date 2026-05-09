@@ -26,6 +26,7 @@ from app.models.contract import (
     AuditLog,
     recalculate_contract_summary,
 )
+from app.models.collaboration import ApprovalHistory
 from app.utils.audit import log_action
 from app.utils.permissions import require_permissions, get_current_user
 
@@ -34,7 +35,7 @@ contract_bp = Blueprint('contracts', __name__, url_prefix='/api')
 
 
 STATUS_FIELDS = {
-    'processing_status', 'quotation_status', 'settlement_status', 'approval_status', 'archive_status'
+    'processing_status', 'quotation_status', 'settlement_status', 'archive_status'
 }
 
 
@@ -126,6 +127,9 @@ def contract_detail(contract: Contract):
     data['payments'] = [item.to_dict() for item in contract.payments]
     data['acceptances'] = [item.to_dict() for item in contract.acceptances]
     data['files'] = [item.to_dict() for item in contract.files if not item.deleted_at]
+    data['approval_history'] = [item.to_dict() for item in
+                                ApprovalHistory.query.filter_by(contract_id=contract.id)
+                                .order_by(ApprovalHistory.created_at.asc()).all()]
     return data
 
 
@@ -407,6 +411,7 @@ def list_contracts():
     page_size = min(max(int(request.args.get('page_size', 10)), 1), 100)
     keyword = (request.args.get('keyword') or '').strip()
     processing_status = (request.args.get('processing_status') or '').strip()
+    approval_status = (request.args.get('approval_status') or '').strip()
     raw_ids = (request.args.get('ids') or '').strip()
 
     query = Contract.query.filter_by(is_deleted=False)
@@ -428,6 +433,8 @@ def list_contracts():
         )
     if processing_status:
         query = query.filter_by(processing_status=processing_status)
+    if approval_status:
+        query = query.filter_by(approval_status=approval_status)
 
     pagination = query.order_by(Contract.updated_at.desc()).paginate(page=page, per_page=page_size, error_out=False)
     return jsonify({
@@ -449,6 +456,7 @@ def export_contracts():
 
     keyword = (request.args.get('keyword') or '').strip()
     processing_status = (request.args.get('processing_status') or '').strip()
+    approval_status = (request.args.get('approval_status') or '').strip()
     raw_ids = (request.args.get('ids') or '').strip()
 
     query = Contract.query.filter_by(is_deleted=False)
@@ -470,6 +478,8 @@ def export_contracts():
         )
     if processing_status:
         query = query.filter_by(processing_status=processing_status)
+    if approval_status:
+        query = query.filter_by(approval_status=approval_status)
 
     contracts = query.order_by(Contract.updated_at.desc()).all()
 
@@ -840,6 +850,9 @@ def upload_contract_file(contract_id):
     storage_path = upload_dir / storage_name
 
     content = file_obj.read()
+    file_size = len(content)
+    if file_size > 5 * 1024 * 1024:
+        return jsonify({'message': f'文件大小为 {file_size / (1024 * 1024):.1f}MB，超过 5MB 限制'}), 413
     file_hash = hashlib.sha256(content).hexdigest()
     with open(storage_path, 'wb') as fw:
         fw.write(content)
@@ -996,143 +1009,364 @@ def _unique_project_code(row_index):
 @require_permissions('contract:create')
 def import_contracts_from_excel():
     """从上传的 Excel 文件批量导入合同"""
+    import re as _re
+    from datetime import datetime as _datetime
+
     user = get_current_user()
 
-    # 检查文件是否存在
+    # ========== 1. 文件校验 ==========
     file_obj = request.files.get('file')
     if not file_obj:
-        return jsonify({'message': '请选择要导入的Excel文件'}), 400
+        return jsonify({'message': '请选择要导入的 Excel 文件'}), 400
 
-    # 校验文件类型
     filename = file_obj.filename or ''
     if not filename.lower().endswith(('.xlsx', '.xls')):
         return jsonify({'message': '仅支持 .xlsx 或 .xls 格式的 Excel 文件'}), 400
 
-    # 获取可选参数
     sheet_name = request.form.get('sheet') or None
 
+    # ========== 2. 字段映射配置 ==========
+    # normalize_header 之后的标准化 key -> 后端字段名
+    FIELD_ALIASES = {
+        # 项目名称
+        'projectname': 'project_name',
+        'project_name': 'project_name',
+        '项目': 'project_name',
+        '项目名称': 'project_name',
+        '工程名称': 'project_name',
+        # 合同号
+        'contractno': 'contract_no',
+        'contract_no': 'contract_no',
+        '编号': 'contract_no',
+        '合同号': 'contract_no',
+        '合同编号': 'contract_no',
+        '合同编码': 'contract_no',
+        # 合同金额
+        'contractamount': 'contract_amount',
+        'contract_amount': 'contract_amount',
+        'amount': 'contract_amount',
+        '总金额': 'contract_amount',
+        '合同金额': 'contract_amount',
+        '金额': 'contract_amount',
+        # 签订日期
+        'signdate': 'sign_date',
+        'sign_date': 'sign_date',
+        '签订日期': 'sign_date',
+        '合同签订日期': 'sign_date',
+        '签约日期': 'sign_date',
+        # 乙方单位
+        'partyb': 'party_b',
+        'party_b': 'party_b',
+        '乙方': 'party_b',
+        '乙方单位': 'party_b',
+        '乙方名称': 'party_b',
+        'secondparty': 'party_b',
+        # 甲方单位
+        'partya': 'party_a',
+        'party_a': 'party_a',
+        '甲方': 'party_a',
+        '甲方单位': 'party_a',
+        '甲方名称': 'party_a',
+        'firstparty': 'party_a',
+        # 已收/已开
+        'receivedopened': 'received_opened',
+        'received_opened': 'received_opened',
+        '已收已开': 'received_opened',
+        '已收/已开': 'received_opened',
+        '已收款已开票': 'received_opened',
+        # 已付款金
+        'paidamount': 'paid_amount',
+        'paid_amount': 'paid_amount',
+        '已付款金': 'paid_amount',
+        '已付款金额': 'paid_amount',
+        '已付款': 'paid_amount',
+        # 验收金额
+        'acceptanceamount': 'acceptance_amount',
+        'acceptance_amount': 'acceptance_amount',
+        '验收金额': 'acceptance_amount',
+        '已验收金额': 'acceptance_amount',
+        # 备注
+        'remark': 'description',
+        'remarks': 'description',
+        'note': 'description',
+        '说明': 'description',
+        '备注': 'description',
+    }
+
+    REQUIRED_FIELDS = ['project_name', 'contract_no', 'contract_amount', 'sign_date', 'party_a', 'party_b']
+
+    # ========== 3. 工具函数 ==========
+    def normalize_header(raw):
+        """标准化表头：去空格/换行/制表符，英文小写，替换斜杠/驼峰等"""
+        if raw is None:
+            return ''
+        s = str(raw).strip()
+        # 去除换行、制表符、多余空格
+        s = _re.sub(r'[\r\n\t]+', '', s)
+        s = _re.sub(r'\s+', '', s)
+        # 替换 / 为空格后统一小写
+        s = s.replace('/', '').replace('\\', '')
+        # 驼峰转下划线：contractNo -> contract_no
+        s = _re.sub(r'([A-Z])', lambda m: '_' + m.group(1).lower(), s)
+        s = s.lower().strip('_')
+        return s
+
+    def parse_import_decimal(value):
+        """安全解析金额"""
+        if value in (None, ''):
+            return Decimal('0')
+        try:
+            return Decimal(str(value).strip())
+        except Exception:
+            return None  # 返回 None 表示解析失败
+
+    def parse_import_date(value):
+        """智能解析日期，支持 Excel 日期类型和多种字符串格式"""
+        if value is None or value == '':
+            return None
+        if isinstance(value, _datetime):
+            return value.date()
+        text = str(value).strip()
+        if not text:
+            return None
+        # 匹配 2025-01-01 / 2025/01/01 / 2025.01.01 / 2025年01月01日
+        m = _re.search(r'(20\d{2})[\-年/.]?(\d{1,2})[\-月/.]?(\d{1,2})', text)
+        if m:
+            y, mo, d = map(int, m.groups())
+            try:
+                return _datetime(y, mo, d).date()
+            except ValueError:
+                return None
+        # 匹配纯数字 20250101
+        if _re.fullmatch(r'20\d{6}', text):
+            try:
+                return _datetime.strptime(text, '%Y%m%d').date()
+            except ValueError:
+                return None
+        return None
+
+    # ========== 4. 读取 Excel ==========
     try:
         wb = load_workbook(file_obj, data_only=True)
+    except Exception:
+        return jsonify({'message': '导入失败：无法读取 Excel 文件，请检查文件是否损坏'}), 400
 
-        # 确定工作表
+    try:
         if sheet_name and sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
         else:
             ws = wb.active
 
-        # 读取表头
-        headers = [str(c.value).strip() if c.value is not None else "" for c in ws[1]]
-        header_map = {name: idx for idx, name in enumerate(headers)}
+        if ws.max_row < 2:
+            return jsonify({'message': '导入失败：Excel 文件没有数据行，请检查文件内容'}), 400
 
+        # ========== 5. 解析表头 ==========
+        raw_headers = [cell.value for cell in ws[1]]
+        normalized_map = {}  # normalized_key -> col_index
+        for idx, raw in enumerate(raw_headers):
+            if raw is None:
+                continue
+            norm_key = normalize_header(raw)
+            if norm_key and norm_key not in normalized_map:
+                normalized_map[norm_key] = idx
+
+        # 映射到后端字段：backend_field -> col_index
+        field_col_map = {}
+        for norm_key, col_idx in normalized_map.items():
+            backend_field = FIELD_ALIASES.get(norm_key)
+            if backend_field and backend_field not in field_col_map:
+                field_col_map[backend_field] = col_idx
+
+        # ========== 6. 必填字段校验 ==========
+        missing = [f for f in REQUIRED_FIELDS if f not in field_col_map]
+        if missing:
+            name_map = {
+                'project_name': '项目名称',
+                'contract_no': '合同号',
+                'contract_amount': '合同金额',
+                'sign_date': '签订日期',
+                'party_a': '甲方单位',
+                'party_b': '乙方单位',
+            }
+            missing_names = '、'.join(name_map.get(f, f) for f in missing)
+            return jsonify({'message': f'导入失败：Excel 缺少必填字段：{missing_names}'}), 400
+
+        # ========== 7. 逐行导入 ==========
         imported = 0
         skipped = 0
         errors = []
         created_contracts = []
 
         for excel_row_no, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            # 检查是否为空行（所有值都为空）
-            if all(v is None or str(v).strip() == '' for v in row if v is not None):
+            try:
+                # 空行检查
+                if all(v is None or str(v).strip() == '' for v in row):
+                    continue
+
+                # 读取必填字段
+                project_name = str(row[field_col_map['project_name']] or '').strip()
+                if not project_name:
+                    skipped += 1
+                    continue
+
+                raw_contract_no = str(row[field_col_map['contract_no']] or '').strip()
+
+                # 合同金额（必填，必须是数字)
+                contract_amount = parse_import_decimal(row[field_col_map['contract_amount']])
+                if contract_amount is None:
+                    errors.append(f'第 {excel_row_no} 行合同金额格式不正确')
+                    continue
+
+                # 签订日期（必填）
+                sign_date_raw = row[field_col_map['sign_date']]
+                sign_date = parse_import_date(sign_date_raw)
+                if sign_date is None:
+                    errors.append(f'第 {excel_row_no} 行签订日期格式不正确')
+                    continue
+
+                # 甲乙方
+                party_a_name = str(row[field_col_map['party_a']] or '').strip() or '未命名甲方'
+                party_b_name = str(row[field_col_map['party_b']] or '').strip() or '未命名乙方'
+                party_a = _ensure_company(party_a_name)
+                party_b = _ensure_company(party_b_name)
+
+                # 可选金额字段
+                received_opened = parse_import_decimal(
+                    row[field_col_map['received_opened']]
+                ) if 'received_opened' in field_col_map else Decimal('0')
+                if received_opened is None:
+                    errors.append(f'第 {excel_row_no} 行已收/已开格式不正确')
+                    continue
+
+                paid_amount = parse_import_decimal(
+                    row[field_col_map['paid_amount']]
+                ) if 'paid_amount' in field_col_map else Decimal('0')
+                if paid_amount is None:
+                    errors.append(f'第 {excel_row_no} 行已付款金格式不正确')
+                    continue
+
+                acceptance_amount = parse_import_decimal(
+                    row[field_col_map['acceptance_amount']]
+                ) if 'acceptance_amount' in field_col_map else Decimal('0')
+                if acceptance_amount is None:
+                    errors.append(f'第 {excel_row_no} 行验收金额格式不正确')
+                    continue
+
+                # 备注
+                description = None
+                if 'description' in field_col_map:
+                    desc_val = row[field_col_map['description']]
+                    description = str(desc_val).strip() if desc_val is not None else None
+
+                # 生成唯一合同号和项目号
+                contract_no = _unique_contract_no(raw_contract_no, excel_row_no - 1)
+                project_code = _unique_project_code(excel_row_no - 1)
+
+                # 去重判断
+                if Contract.query.filter_by(project_name=project_name, contract_no=contract_no).first():
+                    skipped += 1
+                    continue
+
+                # 计算状态
+                unreceived_amount = contract_amount - received_opened
+                unpaid_amount = contract_amount - paid_amount
+                settlement_status = "settled" if unreceived_amount <= 0 and unpaid_amount <= 0 else (
+                    "partially_settled" if (received_opened > 0 or paid_amount > 0) else "pending"
+                )
+                processing_status = "completed" if settlement_status == "settled" else "executing"
+
+                contract = Contract(
+                    serial_no=project_code,
+                    contract_no=contract_no,
+                    contract_name=project_name,
+                    project_name=project_name,
+                    contract_type="imported",
+                    sign_date=sign_date,
+                    party_a_company_id=party_a.id,
+                    party_b_company_id=party_b.id,
+                    currency="CNY",
+                    contract_amount=contract_amount,
+                    invoiced_amount=received_opened,
+                    received_amount=received_opened,
+                    paid_amount=paid_amount,
+                    unreceived_amount=unreceived_amount,
+                    unpaid_amount=unpaid_amount,
+                    processing_status=processing_status,
+                    settlement_status=settlement_status,
+                    approval_status="approved",
+                    archive_status="unarchived",
+                    description=description,
+                    created_by=user.id,
+                    updated_by=user.id,
+                )
+                db.session.add(contract)
+                db.session.flush()
+
+                if received_opened > 0:
+                    db.session.add(ContractInvoice(
+                        contract_id=contract.id,
+                        invoice_amount=received_opened,
+                        invoice_date=sign_date,
+                        status='valid',
+                        remark='Imported from Excel',
+                        created_by=user.id,
+                    ))
+                    db.session.add(ContractReceipt(
+                        contract_id=contract.id,
+                        receipt_amount=received_opened,
+                        receipt_date=sign_date,
+                        receipt_method='Excel import',
+                        remark='Imported from Excel',
+                        created_by=user.id,
+                    ))
+                if paid_amount > 0:
+                    db.session.add(ContractPayment(
+                        contract_id=contract.id,
+                        payment_amount=paid_amount,
+                        payment_date=sign_date,
+                        payment_method='Excel import',
+                        remark='Imported from Excel',
+                        created_by=user.id,
+                    ))
+                if acceptance_amount > 0:
+                    db.session.add(ContractAcceptance(
+                        contract_id=contract.id,
+                        acceptance_amount=acceptance_amount,
+                        acceptance_date=sign_date,
+                        acceptance_note='Imported from Excel',
+                        created_by=user.id,
+                    ))
+                db.session.flush()
+                recalculate_contract_summary(contract)
+
+                created_contracts.append(contract.to_dict())
+
+                log_action(user.id, 'contract', 'import', 'contract', contract.id,
+                           before_data=None, after_data=contract.to_dict())
+
+                imported += 1
+
+                if imported % 100 == 0:
+                    db.session.commit()
+
+            except (ValueError, TypeError) as row_err:
+                errors.append(f'第 {excel_row_no} 行数据格式错误：{str(row_err)}')
                 continue
-
-            # 解析项目名称（必填）
-            project_name_col = header_map.get("项目名称")
-            if project_name_col is not None:
-                project_name = (str(row[project_name_col]).strip() if row[project_name_col] is not None else "")
-            else:
-                project_name = ""
-
-            if not project_name:
-                skipped += 1
+            except Exception as row_err:
+                errors.append(f'第 {excel_row_no} 行处理失败：{str(row_err)}')
                 continue
-
-            # 解析甲乙方
-            party_a_col = header_map.get("甲方单位")
-            party_b_col = header_map.get("乙方单位")
-            party_a_name = str(row[party_a_col] or "").strip() if party_a_col is not None else ""
-            party_b_name = str(row[party_b_col] or "").strip() if party_b_col is not None else ""
-            party_a = _ensure_company(party_a_name or "未命名甲方")
-            party_b = _ensure_company(party_b_name or "未命名乙方")
-
-            # 解析金额和日期
-            contract_amount = _parse_import_decimal(row[header_map.get("合同金额")] if "合同金额" in header_map else None)
-            received_amount = _parse_import_decimal(
-                row[header_map.get("已收/已开票金额")]
-                if "已收/已开票金额" in header_map
-                else (row[header_map.get("已收金额")] if "已收金额" in header_map else None)
-            )
-            payment_key = "已收付款金额" if "已收付款金额" in header_map else ("已付款金额" if "已付款金额" in header_map else None)
-            paid_amount = _parse_import_decimal(row[payment_key] if payment_key is not None else None)
-            acceptance_amount = _parse_import_decimal(row[header_map.get("验收金额")] if "验收金额" in header_map else None)
-
-            # 备注取最后一列或指定列
-            description = None
-            note_key = header_map.get("备注") if "备注" in header_map else (headers[-1] if headers and headers[-1] else None)
-            if note_key and header_map.get(note_key) is not None and row[header_map[note_key]] is not None:
-                description = str(row[header_map[note_key]])
-
-            # 生成唯一的合同号和项目号
-            contract_no_col = header_map.get("合同号")
-            raw_contract_no = str(row[contract_no_col] or "").strip() if contract_no_col is not None else ""
-            contract_no = _unique_contract_no(raw_contract_no, excel_row_no - 1)
-            project_code = _unique_project_code(excel_row_no - 1)
-
-            # 去重判断：同一项目名称 + 同一合同号不重复导入
-            if Contract.query.filter_by(project_name=project_name, contract_no=contract_no).first():
-                skipped += 1
-                continue
-
-            # 计算状态
-            unreceived_amount = contract_amount - received_amount
-            unpaid_amount = contract_amount - paid_amount
-            settlement_status = "settled" if unreceived_amount <= 0 and unpaid_amount <= 0 else (
-                "partially_settled" if (received_amount > 0 or paid_amount > 0) else "pending"
-            )
-            processing_status = "completed" if settlement_status == "settled" else "executing"
-
-            sign_date_col = header_map.get("签订日期")
-            sign_date = _parse_import_date(row[sign_date_col]) if sign_date_col is not None else None
-
-            contract = Contract(
-                serial_no=project_code,
-                contract_no=contract_no,
-                contract_name=project_name,
-                project_name=project_name,
-                contract_type="imported",
-                sign_date=sign_date,
-                party_a_company_id=party_a.id,
-                party_b_company_id=party_b.id,
-                currency="CNY",
-                contract_amount=contract_amount,
-                invoiced_amount=received_amount,
-                received_amount=received_amount,
-                paid_amount=paid_amount,
-                unreceived_amount=unreceived_amount,
-                unpaid_amount=unpaid_amount,
-                processing_status=processing_status,
-                settlement_status=settlement_status,
-                approval_status="approved",
-                archive_status="unarchived",
-                description=description,
-                created_by=user.id,
-                updated_by=user.id,
-            )
-            db.session.add(contract)
-            db.session.flush()
-            created_contracts.append(contract.to_dict())
-
-            log_action(user.id, 'contract', 'import', 'contract', contract.id,
-                       before_data=None, after_data=contract.to_dict())
-
-            imported += 1
-
-            # 每100条提交一次，防止大事务
-            if imported % 100 == 0:
-                db.session.commit()
 
         db.session.commit()
 
+        error_summary = ''
+        if errors:
+            error_summary = '；'.join(errors[:10])
+            if len(errors) > 10:
+                error_summary += f'（共 {len(errors)} 个错误，仅显示前 10 个）'
+
         return jsonify({
-            'message': f'导入完成：成功 {imported} 条，跳过 {skipped} 条',
+            'message': f'导入完成：成功 {imported} 条，跳过 {skipped} 条' +
+                       (f'，{len(errors)} 条错误' if errors else ''),
             'imported_count': imported,
             'skipped_count': skipped,
             'errors': errors,
@@ -1141,7 +1375,13 @@ def import_contracts_from_excel():
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({'message': f'导入失败: {str(e)}'}), 400
+        # 不要把 Python 原始异常直接返回给用户
+        error_msg = str(e)
+        if 'tuple indices' in error_msg or 'TypeError' in error_msg:
+            return jsonify({'message': '导入失败：Excel 表头字段识别失败，请检查模板字段是否正确'}), 400
+        if 'NoneType' in error_msg:
+            return jsonify({'message': '导入失败：Excel 数据格式不正确，请检查必填字段是否完整'}), 400
+        return jsonify({'message': f'导入失败：{error_msg}'}), 400
 
 
 @contract_bp.get('/contracts/import/template')
@@ -1157,7 +1397,7 @@ def download_import_template():
 
     headers = [
         "项目名称", "合同号", "合同金额", "签订日期",
-        "乙方单位", "甲方单位", "已收/已开票金额", "已付款金额", "验收金额", "备注"
+        "乙方单位", "甲方单位", "已收/已开", "已付款金", "验收金额", "备注"
     ]
     example_row = [
         "示例：XX管理系统开发项目", "HT-2026-001", "100000.00", "2026-01-15",
@@ -1178,3 +1418,146 @@ def download_import_template():
     return send_file(buffer, as_attachment=True,
                      download_name='合同导入模板.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ==================== 审批流程 API ====================
+
+def _add_approval_history(contract_id, action, operator_id, operator_name,
+                          comment=None, from_status=None, to_status=None):
+    record = ApprovalHistory(
+        contract_id=contract_id,
+        action=action,
+        operator_id=operator_id,
+        operator_name=operator_name,
+        comment=comment,
+        from_status=from_status,
+        to_status=to_status,
+    )
+    db.session.add(record)
+
+
+@contract_bp.post('/contracts/<int:contract_id>/approval/submit')
+@require_permissions('contract:update')
+def submit_approval(contract_id):
+    """提交审批：草稿/已驳回 → 审批中"""
+    contract, error = get_contract_or_404(contract_id)
+    if error:
+        return error
+
+    if contract.approval_status not in ('draft', 'rejected'):
+        return jsonify({'message': f'当前审批状态为「{contract.approval_status}」，无法提交审批'}), 400
+
+    user = get_current_user()
+    old_status = contract.approval_status
+    contract.approval_status = 'pending_approval'
+    contract.updated_by = user.id
+
+    data = request.get_json(silent=True) or {}
+    _add_approval_history(contract.id, 'submit', user.id, user.real_name or user.username,
+                          comment=data.get('comment'), from_status=old_status, to_status='pending_approval')
+    log_action(user.id, 'approval', 'submit', 'contract', contract.id,
+               before_data={'approval_status': old_status},
+               after_data={'approval_status': 'pending_approval'})
+    db.session.commit()
+    _broadcast_contract_update(contract_id, 'approval_submitted', user.real_name or user.username,
+                               {'approval_status': 'pending_approval'})
+    return jsonify({'message': '已提交审批', 'contract': contract.to_dict()})
+
+
+@contract_bp.post('/contracts/<int:contract_id>/approval/approve')
+@require_permissions('approval:approve')
+def approve_contract(contract_id):
+    """审批通过：审批中 → 已通过"""
+    contract, error = get_contract_or_404(contract_id)
+    if error:
+        return error
+
+    if contract.approval_status != 'pending_approval':
+        return jsonify({'message': f'当前审批状态为「{contract.approval_status}」，无法审批'}), 400
+
+    user = get_current_user()
+    old_status = contract.approval_status
+    contract.approval_status = 'approved'
+    contract.updated_by = user.id
+
+    data = request.get_json(silent=True) or {}
+    _add_approval_history(contract.id, 'approve', user.id, user.real_name or user.username,
+                          comment=data.get('comment'), from_status=old_status, to_status='approved')
+    log_action(user.id, 'approval', 'approve', 'contract', contract.id,
+               before_data={'approval_status': old_status},
+               after_data={'approval_status': 'approved'})
+    db.session.commit()
+    _broadcast_contract_update(contract_id, 'approval_approved', user.real_name or user.username,
+                               {'approval_status': 'approved'})
+    return jsonify({'message': '审批通过', 'contract': contract.to_dict()})
+
+
+@contract_bp.post('/contracts/<int:contract_id>/approval/reject')
+@require_permissions('approval:approve')
+def reject_contract(contract_id):
+    """审批驳回：审批中 → 已驳回"""
+    contract, error = get_contract_or_404(contract_id)
+    if error:
+        return error
+
+    if contract.approval_status != 'pending_approval':
+        return jsonify({'message': f'当前审批状态为「{contract.approval_status}」，无法驳回'}), 400
+
+    user = get_current_user()
+    old_status = contract.approval_status
+    contract.approval_status = 'rejected'
+    contract.updated_by = user.id
+
+    data = request.get_json(silent=True) or {}
+    if not data.get('comment'):
+        return jsonify({'message': '驳回时必须填写审批意见'}), 400
+
+    _add_approval_history(contract.id, 'reject', user.id, user.real_name or user.username,
+                          comment=data.get('comment'), from_status=old_status, to_status='rejected')
+    log_action(user.id, 'approval', 'reject', 'contract', contract.id,
+               before_data={'approval_status': old_status},
+               after_data={'approval_status': 'rejected'})
+    db.session.commit()
+    _broadcast_contract_update(contract_id, 'approval_rejected', user.real_name or user.username,
+                               {'approval_status': 'rejected'})
+    return jsonify({'message': '已驳回', 'contract': contract.to_dict()})
+
+
+@contract_bp.post('/contracts/<int:contract_id>/approval/resubmit')
+@require_permissions('contract:update')
+def resubmit_approval(contract_id):
+    """重新提交审批：已驳回 → 审批中"""
+    contract, error = get_contract_or_404(contract_id)
+    if error:
+        return error
+
+    if contract.approval_status != 'rejected':
+        return jsonify({'message': f'当前审批状态为「{contract.approval_status}」，无法重新提交'}), 400
+
+    user = get_current_user()
+    old_status = contract.approval_status
+    contract.approval_status = 'pending_approval'
+    contract.updated_by = user.id
+
+    data = request.get_json(silent=True) or {}
+    _add_approval_history(contract.id, 'resubmit', user.id, user.real_name or user.username,
+                          comment=data.get('comment'), from_status=old_status, to_status='pending_approval')
+    log_action(user.id, 'approval', 'resubmit', 'contract', contract.id,
+               before_data={'approval_status': old_status},
+               after_data={'approval_status': 'pending_approval'})
+    db.session.commit()
+    _broadcast_contract_update(contract_id, 'approval_resubmitted', user.real_name or user.username,
+                               {'approval_status': 'pending_approval'})
+    return jsonify({'message': '已重新提交审批', 'contract': contract.to_dict()})
+
+
+@contract_bp.get('/contracts/<int:contract_id>/approval/history')
+@require_permissions('contract:view')
+def get_approval_history(contract_id):
+    """获取合同的审批历史"""
+    contract, error = get_contract_or_404(contract_id)
+    if error:
+        return error
+    history = ApprovalHistory.query.filter_by(contract_id=contract_id)\
+        .order_by(ApprovalHistory.created_at.asc()).all()
+    return jsonify({'items': [item.to_dict() for item in history]})

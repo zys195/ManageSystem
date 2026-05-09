@@ -346,14 +346,17 @@ def recalculate_contract_summary(contract: Contract):
     contract.unreceived_amount = amount - received
     contract.unpaid_amount = amount - paid
 
-    if amount > 0 and received >= amount:
-        contract.processing_status = 'completed'
+    is_fully_settled = amount > 0 and contract.unreceived_amount <= 0 and contract.unpaid_amount <= 0
+
+    if is_fully_settled:
         contract.settlement_status = 'settled'
     elif received > 0 or paid > 0:
-        if contract.processing_status == 'completed':
-            contract.processing_status = 'executing'
         contract.settlement_status = 'partially_settled'
     else:
-        if contract.processing_status == 'completed':
-            contract.processing_status = 'executing'
         contract.settlement_status = 'pending'
+
+    # A contract cannot be completed while any receivable/payable balance remains.
+    if is_fully_settled:
+        contract.processing_status = 'completed'
+    elif contract.processing_status == 'completed':
+        contract.processing_status = 'executing'

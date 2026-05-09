@@ -670,3 +670,46 @@ class TaskAttachment(db.Model):
             'uploader_name': self.uploader.real_name if self.uploader else None,
             'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None,
         }
+
+
+# ============================================================
+# 10. 审批历史 (ApprovalHistory) - 合同审批流程记录
+# ============================================================
+class ApprovalHistory(db.Model):
+    """审批历史表 - 记录合同每一次审批流转"""
+    __tablename__ = 'approval_history'
+
+    id = db.Column(db.Integer, primary_key=True)
+    contract_id = db.Column(db.Integer, db.ForeignKey('contracts.id'), nullable=False, index=True)
+
+    # 动作类型: submit / approve / reject / resubmit
+    action = db.Column(db.String(32), nullable=False, index=True)
+
+    # 操作人
+    operator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    operator_name = db.Column(db.String(128), nullable=False)
+
+    # 审批意见
+    comment = db.Column(db.Text)
+
+    # 变更前后的审批状态
+    from_status = db.Column(db.String(50))
+    to_status = db.Column(db.String(50))
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    contract = db.relationship('Contract', backref='approval_history')
+    operator = db.relationship('User', backref='approval_actions')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'contract_id': self.contract_id,
+            'action': self.action,
+            'operator_id': self.operator_id,
+            'operator_name': self.operator_name,
+            'comment': self.comment,
+            'from_status': self.from_status,
+            'to_status': self.to_status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
