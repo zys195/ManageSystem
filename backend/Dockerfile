@@ -37,7 +37,7 @@ ENV FLASK_ENV=production \
 EXPOSE 5000
 
 # 使用 gunicorn + eventlet 运行（支持 WebSocket）
-CMD ["gunicorn", "--worker-class", "gunicorn.workers.geventlet.EventletWorker", "-w", "4", "--threads", "50", \
+CMD ["gunicorn", "--worker-class", "gunicorn.workers.eventlet.EventletWorker", "-w", "4", "--threads", "50", \
      "--bind", "0.0.0.0:5000", "--timeout", "120", \
      "--access-logfile", "-", "--error-logfile", "-", \
      "run:app"]
