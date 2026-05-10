@@ -6,6 +6,7 @@ Flask-SocketIO
 python-dotenv
 psycopg2-binary
 gunicorn[eventlet]
+eventlet
 openpyxl
 Pillow
 pytesseract
