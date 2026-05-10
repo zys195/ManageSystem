@@ -8,5 +8,3 @@ psycopg2-binary
 gunicorn[eventlet]
 eventlet
 openpyxl
-Pillow
-pytesseract

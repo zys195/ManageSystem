@@ -7,8 +7,6 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
-    tesseract-ocr \
-    tesseract-ocr-chi-sim \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 Python 依赖
