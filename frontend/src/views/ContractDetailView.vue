@@ -147,16 +147,17 @@
                 :show-file-list="true"
                 :on-change="onFileChange"
                 :before-upload="beforeUpload"
-                :limit="1"
+                :accept="DOCUMENT_ACCEPT"
+                multiple
               >
                 <template #trigger>
                   <el-button>选择文件</el-button>
                 </template>
                 <template #tip>
-                  <div class="el-upload__tip">文件大小不超过 5MB</div>
+                  <div class="el-upload__tip">支持 PDF、Word、Excel、PPT、TXT、CSV、WPS、OFD，单个文件不超过 50MB</div>
                 </template>
               </el-upload>
-              <el-button type="primary" style="margin-top: 12px" @click="submitFile">上传附件</el-button>
+              <el-button type="primary" style="margin-top: 12px" @click="submitFile">统一上传</el-button>
             </el-form>
           </el-card>
 
@@ -231,9 +232,17 @@
               <el-table-column prop="origin_name" label="文件名" min-width="240" />
               <el-table-column prop="file_category" label="类型" width="120" />
               <el-table-column prop="version_no" label="版本" width="90" />
-              <el-table-column label="下载" width="120">
+              <el-table-column label="操作" width="160">
                 <template #default="scope">
                   <el-button link type="primary" @click="handleDownload(scope.row)">下载</el-button>
+                  <el-button
+                    v-if="authStore.permissions.includes('file:delete')"
+                    link
+                    type="danger"
+                    @click="handleDeleteFile(scope.row)"
+                  >
+                    删除
+                  </el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -261,45 +270,45 @@
         </el-tabs>
       </el-card>
     </div>
-  </MainLayout>
 
-  <!-- 审批操作对话框 -->
-  <el-dialog
-    v-model="approvalDialogVisible"
-    :title="approvalDialogType === 'submit' ? '提交审批' : approvalDialogType === 'approve' ? '审批通过' : approvalDialogType === 'reject' ? '审批驳回' : '重新提交审批'"
-    width="480px"
-    :close-on-click-modal="false"
-  >
-    <el-form label-position="top">
-      <el-form-item :label="approvalDialogType === 'reject' ? '审批意见（必填）' : '审批意见（可选）'">
-        <el-input
-          v-model="approvalComment"
-          type="textarea"
-          :rows="4"
-          :placeholder="approvalDialogType === 'reject' ? '请填写驳回原因' : '请输入审批意见'"
-        />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="approvalDialogVisible = false">取消</el-button>
-        <el-button
-          :type="approvalDialogType === 'reject' ? 'danger' : 'primary'"
-          @click="confirmApprovalAction"
-        >
-          {{ approvalDialogType === 'submit' ? '确认提交' : approvalDialogType === 'approve' ? '确认通过' : approvalDialogType === 'reject' ? '确认驳回' : '确认重新提交' }}
-        </el-button>
-      </div>
-    </template>
-  </el-dialog>
+    <!-- 审批操作对话框 -->
+    <el-dialog
+      v-model="approvalDialogVisible"
+      :title="approvalDialogType === 'submit' ? '提交审批' : approvalDialogType === 'approve' ? '审批通过' : approvalDialogType === 'reject' ? '审批驳回' : '重新提交审批'"
+      width="480px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-position="top">
+        <el-form-item :label="approvalDialogType === 'reject' ? '审批意见（必填）' : '审批意见（可选）'">
+          <el-input
+            v-model="approvalComment"
+            type="textarea"
+            :rows="4"
+            :placeholder="approvalDialogType === 'reject' ? '请填写驳回原因' : '请输入审批意见'"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="approvalDialogVisible = false">取消</el-button>
+          <el-button
+            :type="approvalDialogType === 'reject' ? 'danger' : 'primary'"
+            @click="confirmApprovalAction"
+          >
+            {{ approvalDialogType === 'submit' ? '确认提交' : approvalDialogType === 'approve' ? '确认通过' : approvalDialogType === 'reject' ? '确认驳回' : '确认重新提交' }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
+  </MainLayout>
 </template>
 
 <script setup>
 import { onMounted, onUnmounted, reactive, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import MainLayout from '../layouts/MainLayout.vue'
-import { addAcceptance, addPayment, addReceipt, downloadContractFile, getContract, uploadFile, submitApproval, approveContract, rejectContract, resubmitApproval } from '../api/contract'
+import { addAcceptance, addPayment, addReceipt, deleteContractFile, downloadContractFile, getContract, uploadFile, submitApproval, approveContract, rejectContract, resubmitApproval } from '../api/contract'
 import { useCollaborationStore } from '../stores/collaboration'
 import { useAuthStore } from '../stores/auth'
 
@@ -307,7 +316,6 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const contract = reactive({})
-const selectedFile = ref(null)
 const uploadFileList = ref([])
 const fileCategory = ref('contract_main')
 
@@ -536,32 +544,56 @@ async function submitAcceptance() {
   } catch (error) { ElMessage.error(error.response?.data?.message || '新增验收失败') }
 }
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+const DOCUMENT_ACCEPT = [
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.txt',
+  '.csv',
+  '.wps',
+  '.ofd',
+  '.rtf',
+].join(',')
+const ACCEPTED_DOCUMENT_EXTENSIONS = new Set(DOCUMENT_ACCEPT.split(','))
 
 function beforeUpload(rawFile) {
   if (rawFile.size > MAX_FILE_SIZE) {
     const sizeMB = (rawFile.size / (1024 * 1024)).toFixed(2)
-    ElMessage.warning(`文件大小为 ${sizeMB}MB，超过 5MB 限制，请选择较小的文件`)
+    ElMessage.warning(`文件大小为 ${sizeMB}MB，超过 50MB 限制，请选择较小的文件`)
+    return false
+  }
+
+  const fileName = rawFile.name || ''
+  const extension = fileName.includes('.') ? `.${fileName.split('.').pop().toLowerCase()}` : ''
+  if (!ACCEPTED_DOCUMENT_EXTENSIONS.has(extension)) {
+    ElMessage.warning('暂不支持该文件类型，请上传 PDF、Word、Excel、PPT、TXT、CSV、WPS 或 OFD 文档')
     return false
   }
   return true
 }
 
-function onFileChange(file) {
+function syncUploadFiles(fileList = uploadFileList.value) {
+  uploadFileList.value = fileList.filter((item) => item.raw && beforeUpload(item.raw))
+}
+
+function onFileChange(file, fileList) {
   const rawFile = file.raw
   if (!rawFile) {
-    selectedFile.value = null
-    uploadFileList.value = []
+    syncUploadFiles(fileList)
     return
   }
 
   if (!beforeUpload(rawFile)) {
-    selectedFile.value = null
-    uploadFileList.value = []
+    syncUploadFiles(fileList.filter((item) => item.uid !== file.uid))
     return
   }
 
-  selectedFile.value = rawFile
+  syncUploadFiles(fileList)
 }
 
 async function handleDownload(fileRow) {
@@ -577,17 +609,41 @@ async function handleDownload(fileRow) {
   } catch (error) { ElMessage.error(error.response?.data?.message || '下载失败') }
 }
 
+async function handleDeleteFile(fileRow) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除附件「${fileRow.origin_name}」吗？删除后将不再显示在附件列表中。`,
+      '删除附件',
+      {
+        type: 'warning',
+        customClass: 'solid-confirm-box',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+      }
+    )
+    await deleteContractFile(fileRow.id)
+    ElMessage.success('附件已删除')
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.message || '删除附件失败')
+    }
+  }
+}
+
 async function submitFile() {
-  if (!selectedFile.value) {
+  const files = uploadFileList.value.map((item) => item.raw).filter(Boolean)
+  if (!files.length) {
     ElMessage.warning('请先选择文件')
     return
   }
   try {
-    const formData = new FormData()
-    formData.append('file', selectedFile.value)
-    formData.append('file_category', fileCategory.value)
-    await uploadFile(route.params.id, formData)
-    selectedFile.value = null
+    for (const file of files) {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('file_category', fileCategory.value)
+      await uploadFile(route.params.id, formData)
+    }
     uploadFileList.value = []
     ElMessage.success('上传成功')
     loadData()

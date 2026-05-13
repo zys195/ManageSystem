@@ -1,13 +1,13 @@
 ﻿import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
-import LoginView from '../views/LoginView.vue'
-import DashboardView from '../views/DashboardView.vue'
-import ContractListView from '../views/ContractListView.vue'
-import ContractFormView from '../views/ContractFormView.vue'
-import ContractDetailView from '../views/ContractDetailView.vue'
-import InvoiceListView from '../views/InvoiceListView.vue'
-import SystemBackupView from '../views/SystemBackupView.vue'
+const LoginView = () => import('../views/LoginView.vue')
+const DashboardView = () => import('../views/DashboardView.vue')
+const ContractListView = () => import('../views/ContractListView.vue')
+const ContractFormView = () => import('../views/ContractFormView.vue')
+const ContractDetailView = () => import('../views/ContractDetailView.vue')
+const InvoiceListView = () => import('../views/InvoiceListView.vue')
+const SystemBackupView = () => import('../views/SystemBackupView.vue')
 
 const routes = [
   { path: '/login', component: LoginView, meta: { title: '登录' } },

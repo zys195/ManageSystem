@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file, current_app
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload, selectinload
 from flask_jwt_extended import jwt_required
 
 from openpyxl import load_workbook
@@ -37,6 +38,17 @@ contract_bp = Blueprint('contracts', __name__, url_prefix='/api')
 STATUS_FIELDS = {
     'processing_status', 'quotation_status', 'settlement_status', 'archive_status'
 }
+
+ALLOWED_DOCUMENT_EXTENSIONS = {
+    '.pdf',
+    '.doc', '.docx',
+    '.xls', '.xlsx',
+    '.ppt', '.pptx',
+    '.txt', '.csv',
+    '.wps', '.ofd',
+    '.rtf',
+}
+MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024
 
 
 def _broadcast_contract_update(contract_id: int, event_type: str, user_name: str = None, extra_data: dict = None):
@@ -183,8 +195,11 @@ def normalize_party_company(data, id_key, name_key):
 
 
 
-def get_contract_or_404(contract_id):
-    contract = Contract.query.filter_by(id=contract_id, is_deleted=False).first()
+def get_contract_or_404(contract_id, options=None):
+    query = Contract.query
+    if options:
+        query = query.options(*options)
+    contract = query.filter_by(id=contract_id, is_deleted=False).first()
     if not contract:
         return None, (jsonify({'message': '合同不存在'}), 404)
     return contract, None
@@ -197,7 +212,14 @@ def dashboard_summary():
     executing = Contract.query.filter_by(is_deleted=False, processing_status='executing').count()
     completed = Contract.query.filter_by(is_deleted=False, processing_status='completed').count()
     pending_settlement = Contract.query.filter(Contract.is_deleted.is_(False), Contract.settlement_status != 'settled').count()
-    recent_contracts = Contract.query.filter_by(is_deleted=False).order_by(Contract.created_at.desc()).limit(5).all()
+    recent_contracts = (
+        Contract.query
+        .options(joinedload(Contract.party_a), joinedload(Contract.party_b), joinedload(Contract.owner))
+        .filter_by(is_deleted=False)
+        .order_by(Contract.created_at.desc())
+        .limit(5)
+        .all()
+    )
     invoice_total = StandaloneInvoice.query.count()
     invoice_amount = db.session.query(db.func.coalesce(db.func.sum(StandaloneInvoice.invoice_amount), 0)).scalar() or 0
     recent_invoices = StandaloneInvoice.query.order_by(StandaloneInvoice.created_at.desc()).limit(5).all()
@@ -414,7 +436,11 @@ def list_contracts():
     approval_status = (request.args.get('approval_status') or '').strip()
     raw_ids = (request.args.get('ids') or '').strip()
 
-    query = Contract.query.filter_by(is_deleted=False)
+    query = (
+        Contract.query
+        .options(joinedload(Contract.party_a), joinedload(Contract.party_b), joinedload(Contract.owner))
+        .filter_by(is_deleted=False)
+    )
     if raw_ids:
         try:
             selected_ids = [int(item) for item in raw_ids.split(',') if item.strip()]
@@ -459,7 +485,11 @@ def export_contracts():
     approval_status = (request.args.get('approval_status') or '').strip()
     raw_ids = (request.args.get('ids') or '').strip()
 
-    query = Contract.query.filter_by(is_deleted=False)
+    query = (
+        Contract.query
+        .options(joinedload(Contract.party_a), joinedload(Contract.party_b), joinedload(Contract.owner))
+        .filter_by(is_deleted=False)
+    )
     if raw_ids:
         try:
             selected_ids = [int(item) for item in raw_ids.split(',') if item.strip()]
@@ -634,7 +664,16 @@ def create_contract():
 @contract_bp.get('/contracts/<int:contract_id>')
 @require_permissions('contract:view')
 def get_contract(contract_id):
-    contract, error = get_contract_or_404(contract_id)
+    contract, error = get_contract_or_404(contract_id, options=[
+        joinedload(Contract.party_a),
+        joinedload(Contract.party_b),
+        joinedload(Contract.owner),
+        selectinload(Contract.invoices),
+        selectinload(Contract.receipts),
+        selectinload(Contract.payments),
+        selectinload(Contract.acceptances),
+        selectinload(Contract.files),
+    ])
     if error:
         return error
     refresh_contract_summary(contract)
@@ -844,15 +883,19 @@ def upload_contract_file(contract_id):
     upload_dir = Path(current_app.config['UPLOAD_DIR']) / str(contract.id) / category
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    origin_name = file_obj.filename
-    suffix = Path(origin_name).suffix
+    origin_name = Path(file_obj.filename or '').name
+    suffix = Path(origin_name).suffix.lower()
+    if suffix not in ALLOWED_DOCUMENT_EXTENSIONS:
+        return jsonify({'message': '暂不支持该文件类型，请上传 PDF、Word、Excel、PPT、TXT、CSV、WPS 或 OFD 文档'}), 400
     storage_name = f"{uuid.uuid4().hex}{suffix}"
     storage_path = upload_dir / storage_name
 
     content = file_obj.read()
     file_size = len(content)
-    if file_size > 5 * 1024 * 1024:
-        return jsonify({'message': f'文件大小为 {file_size / (1024 * 1024):.1f}MB，超过 5MB 限制'}), 413
+    if file_size <= 0:
+        return jsonify({'message': '文件内容为空，请重新选择文件'}), 400
+    if file_size > MAX_ATTACHMENT_SIZE:
+        return jsonify({'message': f'文件大小为 {file_size / (1024 * 1024):.1f}MB，超过 50MB 限制'}), 413
     file_hash = hashlib.sha256(content).hexdigest()
     with open(storage_path, 'wb') as fw:
         fw.write(content)

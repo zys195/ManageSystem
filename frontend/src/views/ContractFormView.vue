@@ -326,7 +326,9 @@ async function tryAcquireLock() {
     collab.isLockOwner = true
 
     if (collab.isConnected) {
-      await collab.requestEditLock()
+      collab.requestEditLock().catch((error) => {
+        console.warn('[Lock] WebSocket lock sync failed:', error)
+      })
     }
 
     startLockHeartbeat()
