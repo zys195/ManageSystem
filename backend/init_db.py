@@ -176,7 +176,7 @@ with app.app_context():
                 status=status,
                 priority='high' in [title] and 'high' or 'medium',
                 assignee_id=assignee.id if assignee else None,
-                created_by=admin_user.id if admin_user else None,
+                created_by=js_admin.id if js_admin else None,
             )
             db.session.add(task)
 

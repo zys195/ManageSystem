@@ -5,6 +5,8 @@ const http = axios.create({
   timeout: 20000,
 })
 
+const pendingGetRequests = new Map()
+
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) {
@@ -26,5 +28,31 @@ http.interceptors.response.use(
     return Promise.reject(error)
   }
 )
+
+function stableStringify(value) {
+  if (!value || typeof value !== 'object') return ''
+  return JSON.stringify(Object.keys(value).sort().reduce((result, key) => {
+    result[key] = value[key]
+    return result
+  }, {}))
+}
+
+const originalGet = http.get.bind(http)
+http.get = (url, config = {}) => {
+  if (config.responseType === 'blob') {
+    return originalGet(url, config)
+  }
+
+  const key = `${url}?${stableStringify(config.params)}`
+  if (pendingGetRequests.has(key)) {
+    return pendingGetRequests.get(key)
+  }
+
+  const request = originalGet(url, config).finally(() => {
+    pendingGetRequests.delete(key)
+  })
+  pendingGetRequests.set(key, request)
+  return request
+}
 
 export default http

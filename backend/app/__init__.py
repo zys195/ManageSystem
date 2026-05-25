@@ -182,7 +182,7 @@ def create_app():
                 contract_type='software',
                 party_a_company_id=company_a.id,
                 party_b_company_id=company_b.id,
-                owner_user_id=admin_user.id if admin_user else None,
+                owner_user_id=js_admin.id if js_admin else None,
                 department_id=admin_dept.name,
                 contract_amount=98000,
                 processing_status='executing',

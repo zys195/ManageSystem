@@ -1,7 +1,9 @@
 <template>
   <router-view v-slot="{ Component, route }">
     <transition name="page-fade-slide" mode="out-in">
-      <component :is="Component" :key="route.fullPath" />
+      <div :key="route.fullPath" class="route-view">
+        <component :is="Component" />
+      </div>
     </transition>
   </router-view>
 </template>
@@ -36,3 +38,9 @@ watch(() => auth.isLoggedIn, (loggedIn) => {
   }
 })
 </script>
+
+<style scoped>
+.route-view {
+  min-height: 100vh;
+}
+</style>

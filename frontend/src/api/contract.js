@@ -50,6 +50,10 @@ export function downloadContractFile(fileId) {
   return http.get(`/files/${fileId}/download`, { responseType: 'blob' })
 }
 
+export function deleteContractFile(fileId) {
+  return http.delete(`/files/${fileId}`)
+}
+
 export function importContractsFromExcel(formData) {
   return http.post('/contracts/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

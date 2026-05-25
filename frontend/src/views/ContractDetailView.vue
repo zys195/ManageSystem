@@ -231,9 +231,17 @@
               <el-table-column prop="origin_name" label="文件名" min-width="240" />
               <el-table-column prop="file_category" label="类型" width="120" />
               <el-table-column prop="version_no" label="版本" width="90" />
-              <el-table-column label="下载" width="120">
+              <el-table-column label="操作" width="160">
                 <template #default="scope">
                   <el-button link type="primary" @click="handleDownload(scope.row)">下载</el-button>
+                  <el-button
+                    v-if="authStore.permissions.includes('file:delete')"
+                    link
+                    type="danger"
+                    @click="handleDeleteFile(scope.row)"
+                  >
+                    删除
+                  </el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -261,45 +269,45 @@
         </el-tabs>
       </el-card>
     </div>
-  </MainLayout>
 
-  <!-- 审批操作对话框 -->
-  <el-dialog
-    v-model="approvalDialogVisible"
-    :title="approvalDialogType === 'submit' ? '提交审批' : approvalDialogType === 'approve' ? '审批通过' : approvalDialogType === 'reject' ? '审批驳回' : '重新提交审批'"
-    width="480px"
-    :close-on-click-modal="false"
-  >
-    <el-form label-position="top">
-      <el-form-item :label="approvalDialogType === 'reject' ? '审批意见（必填）' : '审批意见（可选）'">
-        <el-input
-          v-model="approvalComment"
-          type="textarea"
-          :rows="4"
-          :placeholder="approvalDialogType === 'reject' ? '请填写驳回原因' : '请输入审批意见'"
-        />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="approvalDialogVisible = false">取消</el-button>
-        <el-button
-          :type="approvalDialogType === 'reject' ? 'danger' : 'primary'"
-          @click="confirmApprovalAction"
-        >
-          {{ approvalDialogType === 'submit' ? '确认提交' : approvalDialogType === 'approve' ? '确认通过' : approvalDialogType === 'reject' ? '确认驳回' : '确认重新提交' }}
-        </el-button>
-      </div>
-    </template>
-  </el-dialog>
+    <!-- 审批操作对话框 -->
+    <el-dialog
+      v-model="approvalDialogVisible"
+      :title="approvalDialogType === 'submit' ? '提交审批' : approvalDialogType === 'approve' ? '审批通过' : approvalDialogType === 'reject' ? '审批驳回' : '重新提交审批'"
+      width="480px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-position="top">
+        <el-form-item :label="approvalDialogType === 'reject' ? '审批意见（必填）' : '审批意见（可选）'">
+          <el-input
+            v-model="approvalComment"
+            type="textarea"
+            :rows="4"
+            :placeholder="approvalDialogType === 'reject' ? '请填写驳回原因' : '请输入审批意见'"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="approvalDialogVisible = false">取消</el-button>
+          <el-button
+            :type="approvalDialogType === 'reject' ? 'danger' : 'primary'"
+            @click="confirmApprovalAction"
+          >
+            {{ approvalDialogType === 'submit' ? '确认提交' : approvalDialogType === 'approve' ? '确认通过' : approvalDialogType === 'reject' ? '确认驳回' : '确认重新提交' }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
+  </MainLayout>
 </template>
 
 <script setup>
 import { onMounted, onUnmounted, reactive, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import MainLayout from '../layouts/MainLayout.vue'
-import { addAcceptance, addPayment, addReceipt, downloadContractFile, getContract, uploadFile, submitApproval, approveContract, rejectContract, resubmitApproval } from '../api/contract'
+import { addAcceptance, addPayment, addReceipt, deleteContractFile, downloadContractFile, getContract, uploadFile, submitApproval, approveContract, rejectContract, resubmitApproval } from '../api/contract'
 import { useCollaborationStore } from '../stores/collaboration'
 import { useAuthStore } from '../stores/auth'
 
@@ -575,6 +583,28 @@ async function handleDownload(fileRow) {
     a.click()
     window.URL.revokeObjectURL(url)
   } catch (error) { ElMessage.error(error.response?.data?.message || '下载失败') }
+}
+
+async function handleDeleteFile(fileRow) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除附件「${fileRow.origin_name}」吗？删除后将不再显示在附件列表中。`,
+      '删除确认',
+      {
+        type: 'warning',
+        customClass: 'solid-confirm-box',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+      }
+    )
+    await deleteContractFile(fileRow.id)
+    ElMessage.success('附件已删除')
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.message || '删除附件失败')
+    }
+  }
 }
 
 async function submitFile() {

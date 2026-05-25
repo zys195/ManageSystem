@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file, current_app
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload, selectinload
 from flask_jwt_extended import jwt_required
 
 from openpyxl import load_workbook
@@ -183,8 +184,11 @@ def normalize_party_company(data, id_key, name_key):
 
 
 
-def get_contract_or_404(contract_id):
-    contract = Contract.query.filter_by(id=contract_id, is_deleted=False).first()
+def get_contract_or_404(contract_id, options=None):
+    query = Contract.query
+    if options:
+        query = query.options(*options)
+    contract = query.filter_by(id=contract_id, is_deleted=False).first()
     if not contract:
         return None, (jsonify({'message': '合同不存在'}), 404)
     return contract, None
@@ -197,7 +201,14 @@ def dashboard_summary():
     executing = Contract.query.filter_by(is_deleted=False, processing_status='executing').count()
     completed = Contract.query.filter_by(is_deleted=False, processing_status='completed').count()
     pending_settlement = Contract.query.filter(Contract.is_deleted.is_(False), Contract.settlement_status != 'settled').count()
-    recent_contracts = Contract.query.filter_by(is_deleted=False).order_by(Contract.created_at.desc()).limit(5).all()
+    recent_contracts = (
+        Contract.query
+        .options(joinedload(Contract.party_a), joinedload(Contract.party_b), joinedload(Contract.owner))
+        .filter_by(is_deleted=False)
+        .order_by(Contract.created_at.desc())
+        .limit(5)
+        .all()
+    )
     invoice_total = StandaloneInvoice.query.count()
     invoice_amount = db.session.query(db.func.coalesce(db.func.sum(StandaloneInvoice.invoice_amount), 0)).scalar() or 0
     recent_invoices = StandaloneInvoice.query.order_by(StandaloneInvoice.created_at.desc()).limit(5).all()
@@ -414,7 +425,11 @@ def list_contracts():
     approval_status = (request.args.get('approval_status') or '').strip()
     raw_ids = (request.args.get('ids') or '').strip()
 
-    query = Contract.query.filter_by(is_deleted=False)
+    query = (
+        Contract.query
+        .options(joinedload(Contract.party_a), joinedload(Contract.party_b), joinedload(Contract.owner))
+        .filter_by(is_deleted=False)
+    )
     if raw_ids:
         try:
             selected_ids = [int(item) for item in raw_ids.split(',') if item.strip()]
@@ -459,7 +474,11 @@ def export_contracts():
     approval_status = (request.args.get('approval_status') or '').strip()
     raw_ids = (request.args.get('ids') or '').strip()
 
-    query = Contract.query.filter_by(is_deleted=False)
+    query = (
+        Contract.query
+        .options(joinedload(Contract.party_a), joinedload(Contract.party_b), joinedload(Contract.owner))
+        .filter_by(is_deleted=False)
+    )
     if raw_ids:
         try:
             selected_ids = [int(item) for item in raw_ids.split(',') if item.strip()]
@@ -634,7 +653,16 @@ def create_contract():
 @contract_bp.get('/contracts/<int:contract_id>')
 @require_permissions('contract:view')
 def get_contract(contract_id):
-    contract, error = get_contract_or_404(contract_id)
+    contract, error = get_contract_or_404(contract_id, options=[
+        joinedload(Contract.party_a),
+        joinedload(Contract.party_b),
+        joinedload(Contract.owner),
+        selectinload(Contract.invoices),
+        selectinload(Contract.receipts),
+        selectinload(Contract.payments),
+        selectinload(Contract.acceptances),
+        selectinload(Contract.files),
+    ])
     if error:
         return error
     refresh_contract_summary(contract)
