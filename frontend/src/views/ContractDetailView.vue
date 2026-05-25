@@ -769,3 +769,66 @@ onUnmounted(async () => {
 .approval-action { color: #667085; font-size: 13px; margin-right: 8px; }
 .approval-comment { color: #155eef; font-size: 13px; }
 </style>
+
+<style>
+.solid-confirm-box.el-message-box {
+  width: 420px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 22px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  border: 1px solid rgba(255, 255, 255, 0.76) !important;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.26) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.solid-confirm-box .el-message-box__header {
+  padding: 22px 24px 8px;
+}
+
+.solid-confirm-box .el-message-box__content {
+  padding: 12px 24px 22px;
+}
+
+.solid-confirm-box .el-message-box__status {
+  color: #f59e0b !important;
+}
+
+.solid-confirm-box .el-message-box__title,
+.solid-confirm-box .el-message-box__message {
+  color: #111827 !important;
+}
+
+.solid-confirm-box .el-message-box__title {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.solid-confirm-box .el-message-box__message {
+  color: #475467 !important;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.solid-confirm-box .el-message-box__btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px 22px;
+  background: #fff !important;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.solid-confirm-box .el-message-box__btns .el-button {
+  min-width: 86px;
+  border-radius: 14px;
+  font-weight: 700;
+}
+
+.solid-confirm-box .el-message-box__btns .el-button--primary {
+  background: #5b6cff;
+  border-color: #5b6cff;
+  box-shadow: 0 12px 28px rgba(91, 108, 255, 0.26);
+}
+</style>

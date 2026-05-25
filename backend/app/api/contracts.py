@@ -39,6 +39,17 @@ STATUS_FIELDS = {
     'processing_status', 'quotation_status', 'settlement_status', 'archive_status'
 }
 
+ALLOWED_DOCUMENT_EXTENSIONS = {
+    '.pdf',
+    '.doc', '.docx',
+    '.xls', '.xlsx',
+    '.ppt', '.pptx',
+    '.txt', '.csv',
+    '.wps', '.ofd',
+    '.rtf',
+}
+MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024
+
 
 def _broadcast_contract_update(contract_id: int, event_type: str, user_name: str = None, extra_data: dict = None):
     """通过WebSocket广播合同更新事件给房间内所有用户"""
@@ -872,15 +883,19 @@ def upload_contract_file(contract_id):
     upload_dir = Path(current_app.config['UPLOAD_DIR']) / str(contract.id) / category
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    origin_name = file_obj.filename
-    suffix = Path(origin_name).suffix
+    origin_name = Path(file_obj.filename or '').name
+    suffix = Path(origin_name).suffix.lower()
+    if suffix not in ALLOWED_DOCUMENT_EXTENSIONS:
+        return jsonify({'message': '暂不支持该文件类型，请上传 PDF、Word、Excel、PPT、TXT、CSV、WPS 或 OFD 文档'}), 400
     storage_name = f"{uuid.uuid4().hex}{suffix}"
     storage_path = upload_dir / storage_name
 
     content = file_obj.read()
     file_size = len(content)
-    if file_size > 5 * 1024 * 1024:
-        return jsonify({'message': f'文件大小为 {file_size / (1024 * 1024):.1f}MB，超过 5MB 限制'}), 413
+    if file_size <= 0:
+        return jsonify({'message': '文件内容为空，请重新选择文件'}), 400
+    if file_size > MAX_ATTACHMENT_SIZE:
+        return jsonify({'message': f'文件大小为 {file_size / (1024 * 1024):.1f}MB，超过 50MB 限制'}), 413
     file_hash = hashlib.sha256(content).hexdigest()
     with open(storage_path, 'wb') as fw:
         fw.write(content)
